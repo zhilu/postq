@@ -28,16 +28,14 @@
                 <TabPane fx:id="resultTabPane">
                     <tabs>
                         <Tab text="Result 1" closable="false">
-                            <TableView styleClass="table-result" />
+                            <VBox styleClass="tree-view" prefWidth="200.0" spacing="5" >
+                                <TableView styleClass="table-result" VBox.vgrow="ALWAYS" />
+                                <Label fx:id="statusLabel" text="就绪。" />
+                            </VBox>
                         </Tab>
                     </tabs>
                 </TabPane>
             </SplitPane>
         </SplitPane>
     </center>
-    <bottom>
-        <HBox styleClass="status-bar">
-            <Label fx:id="statusLabel" text="就绪。" />
-        </HBox>
-    </bottom>
 </BorderPane>

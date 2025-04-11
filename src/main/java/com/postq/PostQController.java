@@ -7,14 +7,39 @@ import com.postq.model.Table;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.fxml.FXML;
-import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
-import javafx.scene.control.*;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.ContextMenu;
+import javafx.scene.control.Dialog;
+import javafx.scene.control.Label;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.PasswordField;
+import javafx.scene.control.SplitPane;
+import javafx.scene.control.Tab;
+import javafx.scene.control.TabPane;
+import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableView;
+import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
+import javafx.scene.control.TreeItem;
+import javafx.scene.control.TreeView;
 import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -236,6 +261,7 @@ public class PostQController {
 
         TableView<List<String>> resultTable = new TableView<>();
 
+        long start = System.currentTimeMillis();
         try (Statement stmt = connection.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
             resultTable.getItems().clear();
             resultTable.getColumns().clear();
@@ -261,9 +287,23 @@ public class PostQController {
         } catch (SQLException e) {
             showAlert("Query Failed", e.getMessage());
         }
+        long end = System.currentTimeMillis();
+
+        long duration = end - start;
+
+        Label statusLabel = new Label("查询成功 | 耗时 " + duration + "ms");
+
+        HBox statusBar = new HBox(statusLabel);
+        statusBar.setMinHeight(24);
+        statusBar.setMaxHeight(24);
+        statusBar.setStyle("-fx-background-color: #f0f0f0; -fx-padding: 4 8;");
+
+        VBox resultBox = new VBox(resultTable, statusBar);
+        resultBox.setSpacing(5);
+        VBox.setVgrow(statusBar, Priority.NEVER);
 
         Tab resultTab = new Tab("Result " + (resultTabPane.getTabs().size() + 1));
-        resultTab.setContent(resultTable);
+        resultTab.setContent(resultBox);
         resultTab.setClosable(true);
 
         // 添加并选中这个结果页
@@ -466,6 +506,7 @@ public class PostQController {
         TableView<List<String>> resultTable = new TableView<>();
 
 
+        long start = System.currentTimeMillis();
         try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
             resultTable.getItems().clear();
             resultTable.getColumns().clear();
@@ -495,8 +536,22 @@ public class PostQController {
             showAlert("查询失败", "无法执行查询：" + e.getMessage());
         }
 
+        long end = System.currentTimeMillis();
+
+        long duration = end - start;
+
+        Label statusLabel = new Label("查询成功 | 耗时 " + duration + "ms");
+        HBox statusBar = new HBox(statusLabel);
+        statusBar.setMinHeight(24);
+        statusBar.setMaxHeight(24);
+        statusBar.setStyle("-fx-background-color: #f0f0f0; -fx-padding: 4 8;");
+
+        VBox resultBox = new VBox(resultTable, statusBar);
+        resultBox.setSpacing(5);
+        VBox.setVgrow(statusBar, Priority.NEVER);
+
         Tab resultTab = new Tab("Result " + (resultTabPane.getTabs().size() + 1));
-        resultTab.setContent(resultTable);
+        resultTab.setContent(resultBox);
         resultTab.setClosable(true);
 
         // 添加并选中这个结果页

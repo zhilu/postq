@@ -18,5 +18,8 @@
 .status-bar {
     -fx-padding: 5;
     -fx-background-color: #f0f0f0;
+    -fx-min-height: 24px;
+    -fx-max-height: 24px;
+    -fx-pref-height: 24px;
 }
 
