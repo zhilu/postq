@@ -342,11 +342,59 @@ public class PostQController {
         // 为菜单项添加点击事件
         showStructureItem.setOnAction(e -> showTableStructure(tableItem));
 
+        MenuItem viewSampleItem = new MenuItem("查看样例");
+        viewSampleItem.setOnAction(e -> showTableSample(tableItem));
         // 向右键菜单添加选项
-        contextMenu.getItems().add(showStructureItem);
+        contextMenu.getItems().addAll(showStructureItem,viewSampleItem);
 
         // 显示菜单
         contextMenu.show(dbTreeView, event.getScreenX(), event.getScreenY());
+    }
+
+    private void showTableSample(TreeItem<Item> tableItem) {
+        Table table = (Table) tableItem.getValue();
+        Database database = (Database) tableItem.getParent().getValue();
+        Connection conn = connections.get(database.getTitle());
+
+        if (conn == null) {
+            showAlert("连接错误", "无法获取数据库连接：" + database.getTitle());
+            return;
+        }
+
+        // 构造查询 SQL 语句，查询表的前 10 行数据
+        String sql = "SELECT * FROM " + table.getTableName() + " LIMIT 10;";
+
+        // 将查询的 SQL 语句设置到 SQL 编辑器
+        sqlEditor.setText(sql);
+
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
+            resultTable.getItems().clear();
+            resultTable.getColumns().clear();
+
+            // 获取结果集元数据
+            ResultSetMetaData meta = rs.getMetaData();
+            int cols = meta.getColumnCount();
+
+            // 设置表头
+            for (int i = 1; i <= cols; i++) {
+                final int colIdx = i;
+                TableColumn<List<String>, String> column = new TableColumn<>(meta.getColumnName(i));
+                column.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(data.getValue().get(colIdx - 1)));
+                resultTable.getColumns().add(column);
+            }
+
+            // 填充数据
+            while (rs.next()) {
+                List<String> row = new ArrayList<>();
+                for (int i = 1; i <= cols; i++) {
+                    row.add(rs.getString(i));
+                }
+                resultTable.getItems().add(row);
+            }
+
+        } catch (SQLException e) {
+            showAlert("查询失败", "无法执行查询：" + e.getMessage());
+        }
     }
 
 
