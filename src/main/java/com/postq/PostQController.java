@@ -5,10 +5,14 @@ import com.postq.model.Item;
 import com.postq.model.ItemType;
 import com.postq.model.Table;
 import javafx.application.Platform;
+import javafx.beans.property.SimpleStringProperty;
 import javafx.fxml.FXML;
+import javafx.geometry.Insets;
+import javafx.geometry.Orientation;
 import javafx.scene.control.*;
 import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.VBox;
 
 import java.sql.*;
 import java.util.ArrayList;
@@ -49,8 +53,17 @@ public class PostQController {
         dbTreeView.setOnMouseClicked(event -> {
             if (event.getClickCount() == 2) {
                 TreeItem<Item> selected = dbTreeView.getSelectionModel().getSelectedItem();
-                if (selected != null && selected.getParent() == dbTreeView.getRoot() && selected.getChildren().isEmpty()) {
-                    loadTablesForDatabase(selected);
+                if (selected != null) {
+                    Item item = selected.getValue();
+                    if (item.getItemType() == ItemType.DB && selected.getChildren().isEmpty()) {
+                        loadTablesForDatabase(selected);
+                    } else if (item.getItemType() == ItemType.TABLE) {
+                        Table table = (Table) item;
+                        String currentText = sqlEditor.getText();
+                        String newText = currentText + (currentText.isEmpty() ? "" : "\n") + "SELECT * FROM " + table.getTableName() + ";\n";
+                        sqlEditor.setText(newText);
+                        sqlEditor.positionCaret(newText.length());
+                    }
                 }
             }
         });
@@ -206,34 +219,121 @@ public class PostQController {
 
 
     private void showTableStructure(TreeItem<Item> tableItem) {
-        // 假设已有数据库连接
         Table table = (Table) tableItem.getValue();
         Database database = (Database) tableItem.getParent().getValue();
         Connection conn = connections.get(database.getTitle());
 
-        try {
-            DatabaseMetaData meta = conn.getMetaData();
-            ResultSet columns = meta.getColumns(null, null, table.getTableName(), null);
+        if (conn == null) {
+            showAlert("连接错误", "无法获取数据库连接：" + database.getTitle());
+            return;
+        }
 
-            // 创建弹窗来显示表结构
-            StringBuilder tableStructure = new StringBuilder("Columns in table " + table.getTableName() + ":\n");
-            while (columns.next()) {
-                String columnName = columns.getString("COLUMN_NAME");
-                String columnType = columns.getString("TYPE_NAME");
-                tableStructure.append(columnName).append(" - ").append(columnType).append("\n");
+        try {
+            // ========== 字段结构 TableView ==========
+            TableView<List<String>> columnTable = new TableView<>();
+            TableColumn<List<String>, String> colName = new TableColumn<>("字段名");
+            colName.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(0)));
+
+            TableColumn<List<String>, String> colType = new TableColumn<>("类型");
+            colType.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(1)));
+
+            TableColumn<List<String>, String> colNotNull = new TableColumn<>("非空");
+            colNotNull.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(2)));
+
+            TableColumn<List<String>, String> colDefault = new TableColumn<>("默认值");
+            colDefault.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(3)));
+
+            TableColumn<List<String>, String> colComment = new TableColumn<>("注释");
+            colComment.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(4)));
+
+            columnTable.getColumns().addAll(colName, colType, colNotNull, colDefault, colComment);
+
+            String colSql = """
+            SELECT 
+                a.attname AS column_name,
+                format_type(a.atttypid, a.atttypmod) AS data_type,
+                a.attnotnull AS not_null,
+                pg_get_expr(d.adbin, d.adrelid) AS default_value,
+                col_description(a.attrelid, a.attnum) AS comment
+            FROM 
+                pg_attribute a
+            LEFT JOIN pg_attrdef d ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+            WHERE 
+                a.attrelid = ?::regclass
+                AND a.attnum > 0
+                AND NOT a.attisdropped
+            ORDER BY a.attnum;
+        """;
+
+            try (PreparedStatement stmt = conn.prepareStatement(colSql)) {
+                stmt.setString(1, table.getTableName());
+                ResultSet rs = stmt.executeQuery();
+                while (rs.next()) {
+                    String name = rs.getString("column_name");
+                    String type = rs.getString("data_type");
+                    String notNull = rs.getBoolean("not_null") ? "是" : "否";
+                    String defVal = rs.getString("default_value");
+                    String comment = rs.getString("comment");
+
+                    if (name != null && !name.trim().isEmpty()) {
+                        List<String> row = List.of(
+                                name,
+                                type != null ? type : "",
+                                notNull,
+                                defVal != null ? defVal : "",
+                                comment != null ? comment : ""
+                        );
+                        columnTable.getItems().add(row);
+                    }
+                }
             }
 
-            // 显示弹窗
-            Alert alert = new Alert(Alert.AlertType.INFORMATION);
-            alert.setTitle("Table Structure");
-            alert.setHeaderText("Structure of table " + table.getTableName());
-            alert.setContentText(tableStructure.toString());
-            alert.showAndWait();
+            // ========== 索引 TableView ==========
+            TableView<List<String>> indexTable = new TableView<>();
+            TableColumn<List<String>, String> idxName = new TableColumn<>("索引名");
+            idxName.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(0)));
+
+            TableColumn<List<String>, String> idxDef = new TableColumn<>("定义");
+            idxDef.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(1)));
+
+            indexTable.getColumns().addAll(idxName, idxDef);
+
+            String idxSql = "SELECT indexname, indexdef FROM pg_indexes WHERE tablename = ?";
+            try (PreparedStatement stmt = conn.prepareStatement(idxSql)) {
+                stmt.setString(1, table.getTableName());
+                ResultSet rs = stmt.executeQuery();
+                while (rs.next()) {
+                    String name = rs.getString("indexname");
+                    String def = rs.getString("indexdef");
+                    if (name != null && !name.trim().isEmpty()) {
+                        List<String> row = List.of(name, def != null ? def : "");
+                        indexTable.getItems().add(row);
+                    }
+                }
+            }
+
+            // ========== 使用上下结构的 SplitPane ==========
+            SplitPane splitPane = new SplitPane();
+            splitPane.setOrientation(Orientation.VERTICAL);
+            splitPane.getItems().addAll(columnTable, indexTable);
+            splitPane.setDividerPositions(0.7); // 上70%，下30%
+
+            Dialog<Void> dialog = new Dialog<>();
+            dialog.setTitle("表结构 - " + table.getTableName());
+            dialog.getDialogPane().setContent(splitPane);
+            dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+            dialog.setResizable(true);
+            dialog.setWidth(800);
+            dialog.setHeight(600);
+
+            dialog.showAndWait();
 
         } catch (SQLException e) {
-            showAlert("Error", "Could not retrieve table structure: " + e.getMessage());
+            showAlert("错误", "获取表结构失败: " + e.getMessage());
         }
     }
+
+
 
     private void showContextMenu(ContextMenuEvent event, TreeItem<Item> tableItem) {
         ContextMenu contextMenu = new ContextMenu();

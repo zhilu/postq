@@ -6,6 +6,14 @@
     -fx-cell-size: 30px;
 }
 
+.sql-editor {
+    -fx-padding: 3 3 3 3;
+}
+
+.table-result {
+    -fx-padding: 3 3 3 3;
+}
+
 
 .status-bar {
     -fx-padding: 5;
