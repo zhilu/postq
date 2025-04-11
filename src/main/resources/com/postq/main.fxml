@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Orientation?>
+
+<BorderPane xmlns:fx="http://javafx.com/fxml" fx:controller="com.postq.PostQController">
+    <top>
+        <ToolBar>
+            <Button fx:id="addDbButton" text="Add DB" />
+            <Separator orientation="VERTICAL" />
+            <Button fx:id="queryButton" text="Run Query" />
+        </ToolBar>
+    </top>
+    <center>
+        <SplitPane dividerPositions="0.25">
+            <TreeView fx:id="dbTreeView" prefWidth="200.0" />
+            <SplitPane orientation="VERTICAL" dividerPositions="0.5">
+                <TextArea fx:id="sqlEditor" promptText="Write your SQL here..." />
+                <TableView fx:id="resultTable" />
+            </SplitPane>
+        </SplitPane>
+    </center>
+</BorderPane>
