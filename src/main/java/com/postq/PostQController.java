@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 
 public class PostQController {
 
@@ -34,10 +35,49 @@ public class PostQController {
 
     @FXML
     private void initialize() {
-
-
         dbTreeView.setShowRoot(false);
         dbTreeView.setRoot(new TreeItem<>());
+
+        DatabaseConfigManager configManager = new DatabaseConfigManager();
+        Properties properties = configManager.loadConfig();
+
+        if (!properties.isEmpty()) {
+            String[] dbTitles = configManager.getAllDatabaseTitles();
+
+            // 遍历所有数据库标题
+            for (String dbTitle : dbTitles) {
+                String host = properties.getProperty(dbTitle + ".host");
+                String port = properties.getProperty(dbTitle + ".port");
+                String dbName = properties.getProperty(dbTitle + ".databaseName");
+                String userName = properties.getProperty(dbTitle + ".userName");
+                String password = properties.getProperty(dbTitle + ".password");
+                Database db = new Database();
+                db.setTitle(dbTitle);
+                db.setHost(host);
+                db.setPort(port);
+                db.setDatabaseName(dbName);
+                db.setUserName(userName);
+                db.setPassword(password);
+
+                try {
+                    String url = "jdbc:postgresql://" + host + ":" + port + "/" + dbName;
+                    Connection conn = DriverManager.getConnection(url, userName, password);
+
+                    // 连接成功后自动添加数据库
+
+                    TreeItem<Item> item = new TreeItem<>(db);
+                    dbTreeView.getRoot().getChildren().add(item);
+
+                    // 可以将连接与数据库标题关联
+                    connections.put(dbTitle, conn);
+
+                } catch (SQLException e) {
+                    showAlert("连接错误", "无法连接到数据库：" + e.getMessage());
+                }
+            }
+        }
+
+
 
 
         dbTreeView.setOnContextMenuRequested(event -> {
@@ -124,6 +164,16 @@ public class PostQController {
                     Connection conn = DriverManager.getConnection(url, userField.getText(), passField.getText());
                     TreeItem<Item> item = new TreeItem<>(database);
                     dbTreeView.getRoot().getChildren().add(item);
+
+                    new DatabaseConfigManager().saveConfig(
+                            titleField.getText(),
+                            hostField.getText(),
+                            portField.getText(),
+                            userField.getText(),
+                            passField.getText(),
+                            dbField.getText()
+                    );
+
                     connections.put(titleField.getText(),conn);
                     return conn;
                 } catch (SQLException e) {
@@ -249,20 +299,20 @@ public class PostQController {
             columnTable.getColumns().addAll(colName, colType, colNotNull, colDefault, colComment);
 
             String colSql = """
-            SELECT 
-                a.attname AS column_name,
-                format_type(a.atttypid, a.atttypmod) AS data_type,
-                a.attnotnull AS not_null,
-                pg_get_expr(d.adbin, d.adrelid) AS default_value,
-                col_description(a.attrelid, a.attnum) AS comment
-            FROM 
-                pg_attribute a
-            LEFT JOIN pg_attrdef d ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-            WHERE 
-                a.attrelid = ?::regclass
-                AND a.attnum > 0
-                AND NOT a.attisdropped
-            ORDER BY a.attnum;
+        SELECT 
+            a.attname AS column_name,
+            format_type(a.atttypid, a.atttypmod) AS data_type,
+            a.attnotnull AS not_null,
+            pg_get_expr(d.adbin, d.adrelid) AS default_value,
+            col_description(a.attrelid, a.attnum) AS comment
+        FROM 
+            pg_attribute a
+        LEFT JOIN pg_attrdef d ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+        WHERE 
+            a.attrelid = ?::regclass
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+        ORDER BY a.attnum;
         """;
 
             try (PreparedStatement stmt = conn.prepareStatement(colSql)) {
@@ -323,15 +373,21 @@ public class PostQController {
             dialog.getDialogPane().setContent(splitPane);
             dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
             dialog.setResizable(true);
-            dialog.setWidth(800);
-            dialog.setHeight(600);
 
+            // 设置Dialog的最小宽度和最小高度来控制显示大小
+            dialog.getDialogPane().setMinWidth(960);  // 设置最小宽度
+            dialog.getDialogPane().setMinHeight(600);
+
+
+
+            // 使用 showAndWait() 确保对话框阻塞线程并正常响应关闭
             dialog.showAndWait();
 
         } catch (SQLException e) {
             showAlert("错误", "获取表结构失败: " + e.getMessage());
         }
     }
+
 
 
 
