@@ -25,10 +25,11 @@ public class PostQController {
 
     @FXML private SplitPane mainSplitPane;
     @FXML private TreeView<Item> dbTreeView;
-    @FXML private TextArea sqlEditor;
-    @FXML private TableView<List<String>> resultTable;
+    @FXML private TabPane sqlTabPane;
+    @FXML private TabPane resultTabPane;
     @FXML private Button addDbButton;
     @FXML private Button queryButton;
+    @FXML private Button newTabButton;
     @FXML private Label statusLabel;
 
     private final Map<String,Connection> connections = new HashMap<>();
@@ -99,10 +100,14 @@ public class PostQController {
                         loadTablesForDatabase(selected);
                     } else if (item.getItemType() == ItemType.TABLE) {
                         Table table = (Table) item;
-                        String currentText = sqlEditor.getText();
-                        String newText = currentText + (currentText.isEmpty() ? "" : "\n") + "SELECT * FROM " + table.getTableName() + ";\n";
-                        sqlEditor.setText(newText);
-                        sqlEditor.positionCaret(newText.length());
+                        Tab currentTab = sqlTabPane.getSelectionModel().getSelectedItem();
+                        if (currentTab != null && currentTab.getContent() instanceof TextArea textArea) {
+                            String currentText = textArea.getText();
+                            String newText = currentText + (currentText.isEmpty() ? "" : "\n") + "SELECT * FROM " + table.getTableName() + ";\n";
+                            textArea.setText(newText);
+                            textArea.positionCaret(newText.length());
+                        }
+
                     }
                 }
             }
@@ -110,6 +115,12 @@ public class PostQController {
 
         addDbButton.setOnAction(e -> onAddDatabase());
         queryButton.setOnAction(e -> onRunQuery());
+        newTabButton.setOnAction(e -> {
+            int tabCount = sqlTabPane.getTabs().size() + 1;
+            Tab newTab = createNewSqlTab("SQL " + tabCount);
+            sqlTabPane.getTabs().add(newTab);
+            sqlTabPane.getSelectionModel().select(newTab);
+        });
 
         Platform.runLater(() -> {
             mainSplitPane.setDividerPositions(0.2);
@@ -118,6 +129,16 @@ public class PostQController {
         mainSplitPane.widthProperty().addListener((obs, oldVal, newVal) -> {
             mainSplitPane.setDividerPositions(0.2);
         });
+    }
+
+    private Tab createNewSqlTab(String title) {
+        TextArea textArea = new TextArea();
+        textArea.setWrapText(true);
+
+        Tab tab = new Tab(title, textArea);
+        tab.setClosable(true);
+
+        return tab;
     }
 
     private void onAddDatabase() {
@@ -206,7 +227,15 @@ public class PostQController {
             return;
         }
 
-        String sql = sqlEditor.getText();
+        Tab selectedTab = sqlTabPane.getSelectionModel().getSelectedItem();
+        if (selectedTab == null || !(selectedTab.getContent() instanceof TextArea textArea)) {
+            showAlert("错误", "未找到有效的 SQL 编辑区域");
+            return;
+        }
+        String sql = textArea.getText();
+
+        TableView<List<String>> resultTable = new TableView<>();
+
         try (Statement stmt = connection.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
             resultTable.getItems().clear();
             resultTable.getColumns().clear();
@@ -232,6 +261,14 @@ public class PostQController {
         } catch (SQLException e) {
             showAlert("Query Failed", e.getMessage());
         }
+
+        Tab resultTab = new Tab("Result " + (resultTabPane.getTabs().size() + 1));
+        resultTab.setContent(resultTable);
+        resultTab.setClosable(true);
+
+        // 添加并选中这个结果页
+        resultTabPane.getTabs().add(resultTab);
+        resultTabPane.getSelectionModel().select(resultTab);
     }
 
     private void showAlert(String title, String message) {
@@ -421,7 +458,13 @@ public class PostQController {
         String sql = "SELECT * FROM " + table.getTableName() + " LIMIT 10;";
 
         // 将查询的 SQL 语句设置到 SQL 编辑器
-        sqlEditor.setText(sql);
+        Tab currentTab = sqlTabPane.getSelectionModel().getSelectedItem();
+        if (currentTab != null && currentTab.getContent() instanceof TextArea textArea) {
+            textArea.setText(sql);
+        }
+
+        TableView<List<String>> resultTable = new TableView<>();
+
 
         try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
             resultTable.getItems().clear();
@@ -451,6 +494,14 @@ public class PostQController {
         } catch (SQLException e) {
             showAlert("查询失败", "无法执行查询：" + e.getMessage());
         }
+
+        Tab resultTab = new Tab("Result " + (resultTabPane.getTabs().size() + 1));
+        resultTab.setContent(resultTable);
+        resultTab.setClosable(true);
+
+        // 添加并选中这个结果页
+        resultTabPane.getTabs().add(resultTab);
+        resultTabPane.getSelectionModel().select(resultTab);
     }
 
 

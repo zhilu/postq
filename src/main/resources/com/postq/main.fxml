@@ -6,7 +6,10 @@
         <ToolBar>
             <Button fx:id="addDbButton" text="Add DB" />
             <Separator orientation="VERTICAL" />
+            <Button fx:id="newTabButton" text="New Tab" />
+            <Separator orientation="VERTICAL" />
             <Button fx:id="queryButton" text="Run Query" />
+
         </ToolBar>
     </top>
     <center>
@@ -15,8 +18,20 @@
                 <TreeView fx:id="dbTreeView" VBox.vgrow="ALWAYS"/>
             </VBox>
             <SplitPane orientation="VERTICAL" dividerPositions="0.5">
-                <TextArea styleClass="sql-editor" fx:id="sqlEditor" promptText="Write your SQL here..." />
-                <TableView styleClass="table-result" fx:id="resultTable" />
+                <TabPane fx:id="sqlTabPane">
+                    <tabs>
+                        <Tab text="SQL 1" closable="false">
+                            <TextArea promptText="Write your SQL here..." wrapText="true" />
+                        </Tab>
+                    </tabs>
+                </TabPane>
+                <TabPane fx:id="resultTabPane">
+                    <tabs>
+                        <Tab text="Result 1" closable="false">
+                            <TableView styleClass="table-result" />
+                        </Tab>
+                    </tabs>
+                </TabPane>
             </SplitPane>
         </SplitPane>
     </center>
