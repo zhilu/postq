@@ -1,0 +1,14 @@
+.tree-view {
+    -fx-padding: 3 3 3 3;
+}
+
+.tree-cell {
+    -fx-cell-size: 30px;
+}
+
+
+.status-bar {
+    -fx-padding: 5;
+    -fx-background-color: #f0f0f0;
+}
+

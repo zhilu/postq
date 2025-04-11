@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
-<BorderPane xmlns:fx="http://javafx.com/fxml" fx:controller="com.postq.PostQController">
+<BorderPane xmlns:fx="http://javafx.com/fxml" fx:controller="com.postq.PostQController" stylesheets="@styles.css">
     <top>
         <ToolBar>
             <Button fx:id="addDbButton" text="Add DB" />
@@ -10,8 +10,8 @@
         </ToolBar>
     </top>
     <center>
-        <SplitPane dividerPositions="0.25">
-            <VBox prefWidth="200.0" spacing="5" style="-fx-padding: 0 0 2 2;">
+        <SplitPane fx:id="mainSplitPane" dividerPositions="0.20">
+            <VBox styleClass="tree-view" prefWidth="200.0" spacing="5" >
                 <TreeView fx:id="dbTreeView" VBox.vgrow="ALWAYS"/>
             </VBox>
             <SplitPane orientation="VERTICAL" dividerPositions="0.5">
@@ -20,4 +20,9 @@
             </SplitPane>
         </SplitPane>
     </center>
+    <bottom>
+        <HBox styleClass="status-bar">
+            <Label fx:id="statusLabel" text="就绪。" />
+        </HBox>
+    </bottom>
 </BorderPane>

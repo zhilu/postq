@@ -1,40 +1,54 @@
 package com.postq;
 
+import com.postq.model.Database;
+import com.postq.model.Item;
+import com.postq.model.ItemType;
+import com.postq.model.Table;
+import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
-import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.layout.GridPane;
 
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class PostQController {
 
-    @FXML private TreeView<String> dbTreeView;
+    @FXML private SplitPane mainSplitPane;
+    @FXML private TreeView<Item> dbTreeView;
     @FXML private TextArea sqlEditor;
     @FXML private TableView<List<String>> resultTable;
     @FXML private Button addDbButton;
     @FXML private Button queryButton;
+    @FXML private Label statusLabel;
 
-    private final List<Connection> connections = new ArrayList<>();
+    private final Map<String,Connection> connections = new HashMap<>();
 
     @FXML
     private void initialize() {
-        dbTreeView.setRoot(new TreeItem<>("Databases"));
+
+
+        dbTreeView.setShowRoot(false);
+        dbTreeView.setRoot(new TreeItem<>());
 
 
         dbTreeView.setOnContextMenuRequested(event -> {
-            TreeItem<String> selectedItem = dbTreeView.getSelectionModel().getSelectedItem();
+            TreeItem<Item> selectedItem = dbTreeView.getSelectionModel().getSelectedItem();
             if (selectedItem != null && selectedItem.getParent() != dbTreeView.getRoot()) {
-                showContextMenu(event, selectedItem);
+                if(ItemType.TABLE.equals(selectedItem.getValue().getItemType())){
+                    showContextMenu(event, selectedItem);
+                }
+
             }
         });
 
         dbTreeView.setOnMouseClicked(event -> {
             if (event.getClickCount() == 2) {
-                TreeItem<String> selected = dbTreeView.getSelectionModel().getSelectedItem();
+                TreeItem<Item> selected = dbTreeView.getSelectionModel().getSelectedItem();
                 if (selected != null && selected.getParent() == dbTreeView.getRoot() && selected.getChildren().isEmpty()) {
                     loadTablesForDatabase(selected);
                 }
@@ -43,6 +57,14 @@ public class PostQController {
 
         addDbButton.setOnAction(e -> onAddDatabase());
         queryButton.setOnAction(e -> onRunQuery());
+
+        Platform.runLater(() -> {
+            mainSplitPane.setDividerPositions(0.2);
+        });
+
+        mainSplitPane.widthProperty().addListener((obs, oldVal, newVal) -> {
+            mainSplitPane.setDividerPositions(0.2);
+        });
     }
 
     private void onAddDatabase() {
@@ -54,17 +76,19 @@ public class PostQController {
         grid.setHgap(10);
         grid.setVgap(10);
 
+        TextField titleField = new TextField("172.16.10.188");
         TextField hostField = new TextField("172.16.10.188");
         TextField portField = new TextField("5432");
         TextField dbField = new TextField("dev-fms");
         TextField userField = new TextField("dev_fms");
         PasswordField passField = new PasswordField();
 
-        grid.addRow(0, new Label("Host:"), hostField);
-        grid.addRow(1, new Label("Port:"), portField);
-        grid.addRow(2, new Label("Database:"), dbField);
-        grid.addRow(3, new Label("User:"), userField);
-        grid.addRow(4, new Label("Password:"), passField);
+        grid.addRow(0, new Label("Title:"), titleField);
+        grid.addRow(1, new Label("Host:"), hostField);
+        grid.addRow(2, new Label("Port:"), portField);
+        grid.addRow(3, new Label("Database:"), dbField);
+        grid.addRow(4, new Label("User:"), userField);
+        grid.addRow(5, new Label("Password:"), passField);
 
         dialog.getDialogPane().setContent(grid);
         dialog.getDialogPane().getButtonTypes().addAll(
@@ -72,14 +96,22 @@ public class PostQController {
                 ButtonType.CANCEL
         );
 
+        Database database = new Database();
+        database.setTitle(hostField.getText());
+        database.setPort(portField.getText());
+        database.setHost(hostField.getText());
+        database.setUserName(userField.getText());
+        database.setPassword(passField.getText());
+        database.setDatabaseName(dbField.getText());
+
         dialog.setResultConverter(button -> {
             if (button.getButtonData() == ButtonBar.ButtonData.OK_DONE) {
                 try {
-                    String url = "jdbc:postgresql://" + hostField.getText() + ":" + portField.getText() + "/" + dbField.getText();
+                    String url = database.getUrl();
                     Connection conn = DriverManager.getConnection(url, userField.getText(), passField.getText());
-                    TreeItem<String> item = new TreeItem<>(dbField.getText());
+                    TreeItem<Item> item = new TreeItem<>(database);
                     dbTreeView.getRoot().getChildren().add(item);
-                    connections.add(conn);
+                    connections.put(titleField.getText(),conn);
                     return conn;
                 } catch (SQLException e) {
                     showAlert("Connection Failed", e.getMessage());
@@ -92,20 +124,19 @@ public class PostQController {
     }
 
     private void onRunQuery() {
-        TreeItem<String> selected = dbTreeView.getSelectionModel().getSelectedItem();
+        TreeItem<Item> selected = dbTreeView.getSelectionModel().getSelectedItem();
         if (selected == null || selected == dbTreeView.getRoot()) {
             showAlert("No Database Selected", "Please select a database first.");
             return;
         }
 
-        String dbName = selected.getValue();
-        Connection connection = connections.stream().filter(conn -> {
-            try {
-                return !conn.isClosed() && conn.getCatalog().equals(dbName);
-            } catch (SQLException e) {
-                return false;
-            }
-        }).findFirst().orElse(null);
+        TreeItem<Item> selectedDB = selected;
+        if(selected.getValue().getItemType().equals(ItemType.TABLE)){
+            selectedDB= selected.getParent();
+        }
+
+        String dbName = ((Database)selectedDB.getValue()).getTitle();
+        Connection connection = connections.get(dbName);
 
         if (connection == null) {
             showAlert("Connection Error", "Database not connected.");
@@ -146,16 +177,10 @@ public class PostQController {
         alert.showAndWait();
     }
 
-    private void loadTablesForDatabase(TreeItem<String> dbItem) {
-        String dbName = dbItem.getValue();
+    private void loadTablesForDatabase(TreeItem<Item> dbItem) {
+        Database dbName = (Database) dbItem.getValue();
 
-        Connection conn = connections.stream().filter(c -> {
-            try {
-                return !c.isClosed() && c.getCatalog().equals(dbName);
-            } catch (SQLException e) {
-                return false;
-            }
-        }).findFirst().orElse(null);
+        Connection conn = connections.get(dbName.getTitle());
 
         if (conn == null) {
             showAlert("Connection Error", "No active connection for " + dbName);
@@ -168,8 +193,9 @@ public class PostQController {
             dbItem.getChildren().clear();
             while (tables.next()) {
                 String tableName = tables.getString("TABLE_NAME");
-                TreeItem<String> tableItem = new TreeItem<>(tableName);
-                addContextMenuToTable(tableItem, conn, tableName);
+                Table table = new Table();
+                table.setTableName(tableName);
+                TreeItem<Item> tableItem = new TreeItem<>(table);
                 dbItem.getChildren().add(tableItem);
             }
         } catch (SQLException e) {
@@ -177,24 +203,20 @@ public class PostQController {
         }
     }
 
-    private void addContextMenuToTable(TreeItem<String> tableItem, Connection conn, String tableName) {
-        ContextMenu contextMenu = new ContextMenu();
-        MenuItem showStructureItem = new MenuItem("Show Structure");
-        showStructureItem.setOnAction(e -> showTableStructure(tableName));
-        contextMenu.getItems().add(showStructureItem);
 
-    }
 
-    private void showTableStructure(String tableName) {
+    private void showTableStructure(TreeItem<Item> tableItem) {
         // 假设已有数据库连接
-        Connection conn = connections.get(0);  // 假设你有获取当前数据库连接的方法
+        Table table = (Table) tableItem.getValue();
+        Database database = (Database) tableItem.getParent().getValue();
+        Connection conn = connections.get(database.getTitle());
 
         try {
             DatabaseMetaData meta = conn.getMetaData();
-            ResultSet columns = meta.getColumns(null, null, tableName, null);
+            ResultSet columns = meta.getColumns(null, null, table.getTableName(), null);
 
             // 创建弹窗来显示表结构
-            StringBuilder tableStructure = new StringBuilder("Columns in table " + tableName + ":\n");
+            StringBuilder tableStructure = new StringBuilder("Columns in table " + table.getTableName() + ":\n");
             while (columns.next()) {
                 String columnName = columns.getString("COLUMN_NAME");
                 String columnType = columns.getString("TYPE_NAME");
@@ -204,7 +226,7 @@ public class PostQController {
             // 显示弹窗
             Alert alert = new Alert(Alert.AlertType.INFORMATION);
             alert.setTitle("Table Structure");
-            alert.setHeaderText("Structure of table " + tableName);
+            alert.setHeaderText("Structure of table " + table.getTableName());
             alert.setContentText(tableStructure.toString());
             alert.showAndWait();
 
@@ -213,13 +235,12 @@ public class PostQController {
         }
     }
 
-    private void showContextMenu(ContextMenuEvent event, TreeItem<String> tableItem) {
-        // 创建右键菜单
+    private void showContextMenu(ContextMenuEvent event, TreeItem<Item> tableItem) {
         ContextMenu contextMenu = new ContextMenu();
         MenuItem showStructureItem = new MenuItem("Show Structure");
 
         // 为菜单项添加点击事件
-        showStructureItem.setOnAction(e -> showTableStructure(tableItem.getValue()));
+        showStructureItem.setOnAction(e -> showTableStructure(tableItem));
 
         // 向右键菜单添加选项
         contextMenu.getItems().add(showStructureItem);
