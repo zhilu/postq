@@ -5,6 +5,8 @@ import com.postq.model.Item;
 import com.postq.model.ItemType;
 import com.postq.model.Table;
 import com.postq.util.Fxs;
+import com.postq.util.SQLs;
+import com.postq.util.Strings;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.fxml.FXML;
@@ -104,7 +106,6 @@ public class PostQController {
             }
         });
         defaultCodeArea.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> autoCompletePopup.hide());
-        defaultCodeArea.addEventFilter(KeyEvent.KEY_PRESSED, this::popSuggestion);
 
         Platform.runLater(() -> {
             mainSplitPane.setDividerPositions(0.2);
@@ -261,7 +262,18 @@ public class PostQController {
             Fxs.showAlert("错误", "未找到有效的 SQL 编辑区域");
             return;
         }
-        String sql = codeArea.getText();
+        String text = codeArea.getText();
+        int caretPosition = codeArea.getCaretPosition();
+
+        String sql = codeArea.getSelectedText();
+        if(Strings.isEmpty(sql)){
+            sql = SQLs.getSQL(codeArea.getText(), caretPosition);
+        }
+
+        if(Strings.isEmpty(sql)){
+            return;
+        }
+
 
         TableView<List<String>> resultTable = new TableView<>();
 
@@ -540,7 +552,7 @@ public class PostQController {
     private static final String[] KEYWORDS = new String[]{
             "SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE",
             "CREATE", "TABLE", "DROP", "ALTER", "INTO", "VALUES",
-            "JOIN", "ON", "AS", "AND", "OR", "NOT", "NULL", "IS"
+            "JOIN", "ON", "AS", "AND", "OR", "NOT", "NULL", "IS","LIMIT"
     };
 
     private static final Pattern PATTERN = Pattern.compile(
@@ -563,7 +575,6 @@ public class PostQController {
             }
         });
         sqlEditor.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> autoCompletePopup.hide());
-        sqlEditor.addEventFilter(KeyEvent.KEY_PRESSED, e -> popSuggestion(e));
 
         Tab tab = new Tab(title, sqlEditor);
         tab.setClosable(true);
@@ -602,7 +613,7 @@ public class PostQController {
         String word = getCurrentWord(text, caretPos);
 
         Database database = getDatabase();
-        if(Objects.isNull(database)){
+        if(Strings.isEmpty(word) || Objects.isNull(database)){
             return;
         }
         List<String> suggestions = null;
