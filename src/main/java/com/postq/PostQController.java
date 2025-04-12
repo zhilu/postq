@@ -8,14 +8,15 @@ import com.postq.util.Fxs;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.fxml.FXML;
+import javafx.geometry.Bounds;
 import javafx.geometry.Orientation;
-import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListView;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.SplitPane;
@@ -27,18 +28,19 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 import javafx.scene.input.ContextMenuEvent;
+import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import javafx.stage.Popup;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
 
 import java.sql.Connection;
-import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -47,14 +49,12 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 public class PostQController {
 
@@ -67,6 +67,8 @@ public class PostQController {
     @FXML private Button queryButton;
     @FXML private Button newTabButton;
     @FXML private Label statusLabel;
+
+    private final ListView<String> suggestionList = new ListView<>();
 
 
 
@@ -102,6 +104,7 @@ public class PostQController {
             }
         });
         defaultCodeArea.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> autoCompletePopup.hide());
+        defaultCodeArea.addEventFilter(KeyEvent.KEY_PRESSED, this::popSuggestion);
 
         Platform.runLater(() -> {
             mainSplitPane.setDividerPositions(0.2);
@@ -110,7 +113,15 @@ public class PostQController {
         mainSplitPane.widthProperty().addListener((obs, oldVal, newVal) -> {
             mainSplitPane.setDividerPositions(0.2);
         });
+
+        suggestionList.addEventFilter(KeyEvent.KEY_RELEASED, this::confirmSuggestion);
+        autoCompletePopup.getContent().add(suggestionList);
+        autoCompletePopup.setAutoHide(true);
+        autoCompletePopup.setHideOnEscape(true);
+        autoCompletePopup.setOnHidden(e -> suggestionList.getSelectionModel().clearSelection());
     }
+
+
 
     private void onTreeClick(MouseEvent event){
         if (event.getClickCount() == 2) {
@@ -163,11 +174,11 @@ public class PostQController {
         grid.setHgap(10);
         grid.setVgap(10);
 
-        TextField titleField = new TextField("172.16.10.188");
-        TextField hostField = new TextField("172.16.10.188");
+        TextField titleField = new TextField();
+        TextField hostField = new TextField();
         TextField portField = new TextField("5432");
-        TextField dbField = new TextField("dev-fms");
-        TextField userField = new TextField("dev_fms");
+        TextField dbField = new TextField();
+        TextField userField = new TextField();
         PasswordField passField = new PasswordField();
 
         grid.addRow(0, new Label("Title:"), titleField);
@@ -216,6 +227,7 @@ public class PostQController {
         TreeItem<Item> selected = dbTreeView.getSelectionModel().getSelectedItem();
         if (selected == null || selected == dbTreeView.getRoot()) {
             Fxs.showAlert("No Database Selected", "Please select a database first.");
+            return null;
         }
         TreeItem<Item> selectedDB = selected;
         if(selected.getValue().getItemType().equals(ItemType.TABLE)){
@@ -551,6 +563,7 @@ public class PostQController {
             }
         });
         sqlEditor.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> autoCompletePopup.hide());
+        sqlEditor.addEventFilter(KeyEvent.KEY_PRESSED, e -> popSuggestion(e));
 
         Tab tab = new Tab(title, sqlEditor);
         tab.setClosable(true);
@@ -577,17 +590,21 @@ public class PostQController {
         return spansBuilder.create();
     }
 
-    private ContextMenu autoCompletePopup = new ContextMenu();
+
 
     private void handleKeyReleased(KeyEvent event, CodeArea codeArea) {
+        if (event.getCode().isModifierKey() || event.getText().isEmpty()) {
+            return;
+        }
         String text = codeArea.getText();
         int caretPos = codeArea.getCaretPosition();
 
-
-        // 获取当前词
         String word = getCurrentWord(text, caretPos);
 
         Database database = getDatabase();
+        if(Objects.isNull(database)){
+            return;
+        }
         List<String> suggestions = null;
         if(isTable(text,word)){
             suggestions = DatabaseManager.INSTANCE.getTableSuggestion(database, word);
@@ -608,42 +625,111 @@ public class PostQController {
 
     private String getCurrentWord(String text, int caretPos) {
         int start = caretPos - 1;
-        while (start >= 0 && Character.isLetterOrDigit(text.charAt(start))) {
+        while (start >= 0 && (Character.isLetterOrDigit(text.charAt(start)) || isSymbol(text.charAt(start))) ) {
             start--;
         }
         return text.substring(start + 1, caretPos);
     }
 
-    private List<String> getSuggestions(String word, Map<String, List<String>> tableFieldMap) {
-        List<String> suggest = new ArrayList<>(); //
-        if(word.length() == 0){
-            return suggest;
-        }
-
-        tableFieldMap.values().forEach(suggest::addAll);                // 字段名
-        return suggest.stream()
-                .filter(name -> name.toLowerCase().startsWith(word.toLowerCase()))
-                .collect(Collectors.toList());
+    public boolean isSymbol(char c) {
+        String symbols = "!@#$%^&*()_+-=|{}[]:;\"'<>,.?/\\~`";
+        return symbols.indexOf(c) >= 0;
     }
 
-    private void showAutoCompletePopup(CodeArea codeArea, List<String> suggestions, String prefix) {
-        autoCompletePopup.getItems().clear();
-        for (String suggestion : suggestions) {
-            MenuItem item = new MenuItem(suggestion);
-            item.setOnAction(e -> {
-                int pos = codeArea.getCaretPosition();
-                String text = codeArea.getText();
-                String before = text.substring(0, pos - prefix.length());
-                String after = text.substring(pos);
-                codeArea.replaceText(before + suggestion + after);
-                codeArea.moveTo((before + suggestion).length());
-            });
-            autoCompletePopup.getItems().add(item);
+    public void popSuggestion(KeyEvent e){
+        if(!autoCompletePopup.isShowing()){
+            return;
         }
 
-        // 显示在 caret 附近
-        autoCompletePopup.show(codeArea, codeArea.localToScreen(codeArea.getCaretBounds().get()).getMinX(),
-                codeArea.localToScreen(codeArea.getCaretBounds().get()).getMaxY());
+        if (e.getCode() == KeyCode.DOWN) {
+            suggestionList.getSelectionModel().selectNext();
+            suggestionList.scrollTo(suggestionList.getSelectionModel().getSelectedIndex());
+            e.consume();
+        } else if (e.getCode() == KeyCode.UP) {
+            suggestionList.getSelectionModel().selectPrevious();
+            suggestionList.scrollTo(suggestionList.getSelectionModel().getSelectedIndex());
+            e.consume();
+        } else if (e.getCode() == KeyCode.ENTER) {
+            String selected = suggestionList.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                String prefix = getCurrentWord(defaultCodeArea.getText(),defaultCodeArea.getCaretPosition());
+                int pos = defaultCodeArea.getCaretPosition();
+                String text = defaultCodeArea.getText();
+                String before = text.substring(0, pos - prefix.length());
+                String after = text.substring(pos);
+                defaultCodeArea.replaceText(before + selected + after);
+                defaultCodeArea.moveTo((before + selected).length());
+            }
+            autoCompletePopup.hide();
+            e.consume();
+        } else if (e.getCode() == KeyCode.ESCAPE) {
+            autoCompletePopup.hide();
+            e.consume();
+        }
+    }
+
+    public void confirmSuggestion(KeyEvent e){
+        if (e.getCode() == KeyCode.ENTER) {
+            String selected = suggestionList.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                int pos = defaultCodeArea.getCaretPosition();
+                String text = defaultCodeArea.getText();
+                String prefix = getCurrentWord(text, pos);
+                String before = text.substring(0, pos - prefix.length());
+                String after = text.substring(pos);
+                defaultCodeArea.replaceText(before + selected + after);
+                defaultCodeArea.moveTo((before + selected).length());
+            }
+            autoCompletePopup.hide();
+            e.consume();
+        } else if (e.getCode() == KeyCode.ESCAPE) {
+            autoCompletePopup.hide();
+            e.consume();
+        } else if (e.getCode() == KeyCode.DOWN) {
+            suggestionList.getSelectionModel().selectNext();
+            suggestionList.scrollTo(suggestionList.getSelectionModel().getSelectedIndex());
+            e.consume();
+        } else if (e.getCode() == KeyCode.UP) {
+            suggestionList.getSelectionModel().selectPrevious();
+            suggestionList.scrollTo(suggestionList.getSelectionModel().getSelectedIndex());
+            e.consume();
+        }
+    }
+
+    private Popup autoCompletePopup = new Popup();;
+    private void showAutoCompletePopup(CodeArea codeArea, List<String> suggestions, String prefix) {
+        suggestionList.getItems().setAll(suggestions);
+        suggestionList.getSelectionModel().selectFirst();
+
+        Platform.runLater(() -> {
+            int caretPosition = codeArea.getCaretPosition();
+            String text = codeArea.getText();
+            int textLength = text.length();
+
+            if (textLength > 0 && ' ' == text.charAt(textLength - 1)) {
+                return;
+            }
+
+            if (caretPosition > 0 && caretPosition <= textLength) {
+                // 获取光标位置的屏幕坐标
+                Optional<Bounds> maybeBounds = codeArea.getCharacterBoundsOnScreen(caretPosition - prefix.length(), caretPosition);
+
+                if (maybeBounds.isPresent()) {
+                    Bounds screenBounds = maybeBounds.get();
+                    double x = screenBounds.getMinX();
+                    double y = screenBounds.getMaxY();
+
+                    // 设置并显示弹窗
+                    autoCompletePopup.getContent().setAll(suggestionList);
+                    autoCompletePopup.setAutoHide(true);
+                    autoCompletePopup.setHideOnEscape(true);
+                    autoCompletePopup.show(codeArea.getScene().getWindow(), x, y);
+                    suggestionList.requestFocus();
+                } else {
+                    System.out.println("⚠️ 获取光标位置失败，弹窗未显示");
+                }
+            }
+        });
     }
 
 }
