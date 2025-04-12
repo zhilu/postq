@@ -1,5 +1,7 @@
 package com.postq;
 
+import com.postq.model.Database;
+
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -38,12 +40,22 @@ public class DatabaseConfigManager {
         return properties;
     }
 
-    // 获取所有已保存的数据库标题
     public String[] getAllDatabaseTitles() {
         return properties.keySet().stream()
                 .map(Object::toString)
-                .filter(key -> key.endsWith(".host"))  // 假设每个数据库配置都有 host 字段
+                .filter(key -> key.endsWith(".host"))
                 .map(key -> key.replace(".host", ""))
                 .toArray(String[]::new);
+    }
+
+    public Database getDatabase(String dbTitle) {
+        Database db = new Database();
+        db.setTitle(dbTitle);
+        db.setHost(properties.getProperty(dbTitle + ".host"));
+        db.setPort(properties.getProperty(dbTitle + ".port"));
+        db.setDatabaseName(properties.getProperty(dbTitle + ".databaseName"));
+        db.setUserName(properties.getProperty(dbTitle + ".userName"));
+        db.setPassword(properties.getProperty(dbTitle + ".password"));
+        return db;
     }
 }

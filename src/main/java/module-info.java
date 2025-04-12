@@ -7,4 +7,6 @@ module com.postq {
 
     opens com.postq to javafx.fxml;
     exports com.postq;
+    exports com.postq.util;
+    opens com.postq.util to javafx.fxml;
 }

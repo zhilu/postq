@@ -4,6 +4,7 @@ import com.postq.model.Database;
 import com.postq.model.Item;
 import com.postq.model.ItemType;
 import com.postq.model.Table;
+import com.postq.util.Fxs;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.fxml.FXML;
@@ -27,6 +28,7 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 import javafx.scene.input.ContextMenuEvent;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -44,6 +46,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 
 public class PostQController {
@@ -69,83 +72,18 @@ public class PostQController {
 
         if (!properties.isEmpty()) {
             String[] dbTitles = configManager.getAllDatabaseTitles();
-
-            // 遍历所有数据库标题
             for (String dbTitle : dbTitles) {
-                String host = properties.getProperty(dbTitle + ".host");
-                String port = properties.getProperty(dbTitle + ".port");
-                String dbName = properties.getProperty(dbTitle + ".databaseName");
-                String userName = properties.getProperty(dbTitle + ".userName");
-                String password = properties.getProperty(dbTitle + ".password");
-                Database db = new Database();
-                db.setTitle(dbTitle);
-                db.setHost(host);
-                db.setPort(port);
-                db.setDatabaseName(dbName);
-                db.setUserName(userName);
-                db.setPassword(password);
-
-                try {
-                    String url = "jdbc:postgresql://" + host + ":" + port + "/" + dbName;
-                    Connection conn = DriverManager.getConnection(url, userName, password);
-
-                    // 连接成功后自动添加数据库
-
-                    TreeItem<Item> item = new TreeItem<>(db);
-                    dbTreeView.getRoot().getChildren().add(item);
-
-                    // 可以将连接与数据库标题关联
-                    connections.put(dbTitle, conn);
-
-                } catch (SQLException e) {
-                    showAlert("连接错误", "无法连接到数据库：" + e.getMessage());
-                }
+                TreeItem<Item> item = new TreeItem<>(configManager.getDatabase(dbTitle));
+                dbTreeView.getRoot().getChildren().add(item);
             }
         }
 
-
-
-
-        dbTreeView.setOnContextMenuRequested(event -> {
-            TreeItem<Item> selectedItem = dbTreeView.getSelectionModel().getSelectedItem();
-            if (selectedItem != null && selectedItem.getParent() != dbTreeView.getRoot()) {
-                if(ItemType.TABLE.equals(selectedItem.getValue().getItemType())){
-                    showContextMenu(event, selectedItem);
-                }
-
-            }
-        });
-
-        dbTreeView.setOnMouseClicked(event -> {
-            if (event.getClickCount() == 2) {
-                TreeItem<Item> selected = dbTreeView.getSelectionModel().getSelectedItem();
-                if (selected != null) {
-                    Item item = selected.getValue();
-                    if (item.getItemType() == ItemType.DB && selected.getChildren().isEmpty()) {
-                        loadTablesForDatabase(selected);
-                    } else if (item.getItemType() == ItemType.TABLE) {
-                        Table table = (Table) item;
-                        Tab currentTab = sqlTabPane.getSelectionModel().getSelectedItem();
-                        if (currentTab != null && currentTab.getContent() instanceof TextArea textArea) {
-                            String currentText = textArea.getText();
-                            String newText = currentText + (currentText.isEmpty() ? "" : "\n") + "SELECT * FROM " + table.getTableName() + ";\n";
-                            textArea.setText(newText);
-                            textArea.positionCaret(newText.length());
-                        }
-
-                    }
-                }
-            }
-        });
+        dbTreeView.setOnMouseClicked(this::onTreeClick);
+        dbTreeView.setOnContextMenuRequested(this::onTreeRightClick);
 
         addDbButton.setOnAction(e -> onAddDatabase());
         queryButton.setOnAction(e -> onRunQuery());
-        newTabButton.setOnAction(e -> {
-            int tabCount = sqlTabPane.getTabs().size() + 1;
-            Tab newTab = createNewSqlTab("SQL " + tabCount);
-            sqlTabPane.getTabs().add(newTab);
-            sqlTabPane.getSelectionModel().select(newTab);
-        });
+        newTabButton.setOnAction(e -> onQueryTab());
 
         Platform.runLater(() -> {
             mainSplitPane.setDividerPositions(0.2);
@@ -155,6 +93,43 @@ public class PostQController {
             mainSplitPane.setDividerPositions(0.2);
         });
     }
+
+    private void onTreeClick(MouseEvent event){
+        if (event.getClickCount() == 2) {
+            TreeItem<Item> selected = dbTreeView.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                Item item = selected.getValue();
+                if (item.getItemType() == ItemType.DB && selected.getChildren().isEmpty()) {
+                    loadTablesForDatabase(selected);
+                } else if (item.getItemType() == ItemType.TABLE) {
+                    Table table = (Table) item;
+                    Tab currentTab = sqlTabPane.getSelectionModel().getSelectedItem();
+                    if (currentTab != null && currentTab.getContent() instanceof TextArea textArea) {
+                        String currentText = textArea.getText();
+                        String newText = currentText + (currentText.isEmpty() ? "" : "\n") + "SELECT * FROM " + table.getTableName() + ";\n";
+                        textArea.setText(newText);
+                        textArea.positionCaret(newText.length());
+                    }
+                }
+            }
+        }
+    }
+    private void onTreeRightClick(ContextMenuEvent event){
+        TreeItem<Item> selectedItem = dbTreeView.getSelectionModel().getSelectedItem();
+        if (selectedItem != null && selectedItem.getParent() != dbTreeView.getRoot()) {
+            if(ItemType.TABLE.equals(selectedItem.getValue().getItemType())){
+                showContextMenu(event, selectedItem);
+            }
+        }
+    }
+
+    private void onQueryTab(){
+        int tabCount = sqlTabPane.getTabs().size() + 1;
+        Tab newTab = createNewSqlTab("SQL " + tabCount);
+        sqlTabPane.getTabs().add(newTab);
+        sqlTabPane.getSelectionModel().select(newTab);
+    }
+
 
     private Tab createNewSqlTab(String title) {
         TextArea textArea = new TextArea();
@@ -202,29 +177,22 @@ public class PostQController {
         database.setUserName(userField.getText());
         database.setPassword(passField.getText());
         database.setDatabaseName(dbField.getText());
+        new DatabaseConfigManager().saveConfig(
+                titleField.getText(),
+                hostField.getText(),
+                portField.getText(),
+                userField.getText(),
+                passField.getText(),
+                dbField.getText()
+        );
 
         dialog.setResultConverter(button -> {
             if (button.getButtonData() == ButtonBar.ButtonData.OK_DONE) {
-                try {
-                    String url = database.getUrl();
-                    Connection conn = DriverManager.getConnection(url, userField.getText(), passField.getText());
+                    Connection conn = DatabaseManager.getConnection(database);
                     TreeItem<Item> item = new TreeItem<>(database);
                     dbTreeView.getRoot().getChildren().add(item);
-
-                    new DatabaseConfigManager().saveConfig(
-                            titleField.getText(),
-                            hostField.getText(),
-                            portField.getText(),
-                            userField.getText(),
-                            passField.getText(),
-                            dbField.getText()
-                    );
-
                     connections.put(titleField.getText(),conn);
                     return conn;
-                } catch (SQLException e) {
-                    showAlert("Connection Failed", e.getMessage());
-                }
             }
             return null;
         });
@@ -235,7 +203,7 @@ public class PostQController {
     private void onRunQuery() {
         TreeItem<Item> selected = dbTreeView.getSelectionModel().getSelectedItem();
         if (selected == null || selected == dbTreeView.getRoot()) {
-            showAlert("No Database Selected", "Please select a database first.");
+            Fxs.showAlert("No Database Selected", "Please select a database first.");
             return;
         }
 
@@ -248,13 +216,13 @@ public class PostQController {
         Connection connection = connections.get(dbName);
 
         if (connection == null) {
-            showAlert("Connection Error", "Database not connected.");
+            Fxs.showAlert("Connection Error", "Database not connected.");
             return;
         }
 
         Tab selectedTab = sqlTabPane.getSelectionModel().getSelectedItem();
         if (selectedTab == null || !(selectedTab.getContent() instanceof TextArea textArea)) {
-            showAlert("错误", "未找到有效的 SQL 编辑区域");
+            Fxs.showAlert("错误", "未找到有效的 SQL 编辑区域");
             return;
         }
         String sql = textArea.getText();
@@ -285,7 +253,7 @@ public class PostQController {
             }
 
         } catch (SQLException e) {
-            showAlert("Query Failed", e.getMessage());
+            Fxs.showAlert("Query Failed", e.getMessage());
         }
         long end = System.currentTimeMillis();
 
@@ -311,21 +279,18 @@ public class PostQController {
         resultTabPane.getSelectionModel().select(resultTab);
     }
 
-    private void showAlert(String title, String message) {
-        Alert alert = new Alert(Alert.AlertType.ERROR, message, ButtonType.OK);
-        alert.setTitle(title);
-        alert.showAndWait();
-    }
+
 
     private void loadTablesForDatabase(TreeItem<Item> dbItem) {
         Database dbName = (Database) dbItem.getValue();
 
         Connection conn = connections.get(dbName.getTitle());
-
-        if (conn == null) {
-            showAlert("Connection Error", "No active connection for " + dbName);
-            return;
+        if(Objects.isNull(conn)){
+            conn = DatabaseManager.getConnection(dbName);
+            connections.put(dbName.getTitle(), conn);
         }
+
+
 
         try {
             DatabaseMetaData meta = conn.getMetaData();
@@ -339,7 +304,7 @@ public class PostQController {
                 dbItem.getChildren().add(tableItem);
             }
         } catch (SQLException e) {
-            showAlert("Error", "Could not load tables: " + e.getMessage());
+            Fxs.showAlert("Error", "Could not load tables: " + e.getMessage());
         }
     }
 
@@ -351,7 +316,7 @@ public class PostQController {
         Connection conn = connections.get(database.getTitle());
 
         if (conn == null) {
-            showAlert("连接错误", "无法获取数据库连接：" + database.getTitle());
+            Fxs.showAlert("连接错误", "无法获取数据库连接：" + database.getTitle());
             return;
         }
 
@@ -461,7 +426,7 @@ public class PostQController {
             dialog.showAndWait();
 
         } catch (SQLException e) {
-            showAlert("错误", "获取表结构失败: " + e.getMessage());
+            Fxs.showAlert("错误", "获取表结构失败: " + e.getMessage());
         }
     }
 
@@ -490,7 +455,7 @@ public class PostQController {
         Connection conn = connections.get(database.getTitle());
 
         if (conn == null) {
-            showAlert("连接错误", "无法获取数据库连接：" + database.getTitle());
+            Fxs.showAlert("连接错误", "无法获取数据库连接：" + database.getTitle());
             return;
         }
 
@@ -533,7 +498,7 @@ public class PostQController {
             }
 
         } catch (SQLException e) {
-            showAlert("查询失败", "无法执行查询：" + e.getMessage());
+            Fxs.showAlert("查询失败", "无法执行查询：" + e.getMessage());
         }
 
         long end = System.currentTimeMillis();
