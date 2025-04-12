@@ -27,6 +27,7 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 import javafx.scene.input.ContextMenuEvent;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -53,6 +54,7 @@ import java.util.Objects;
 import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public class PostQController {
 
@@ -66,7 +68,7 @@ public class PostQController {
     @FXML private Button newTabButton;
     @FXML private Label statusLabel;
 
-    private final Map<String,Connection> connections = new HashMap<>();
+
 
     @FXML
     private void initialize() {
@@ -93,6 +95,13 @@ public class PostQController {
 
         defaultCodeArea.textProperty().addListener((obs, oldText, newText) ->
                 defaultCodeArea.setStyleSpans(0, computeHighlighting(newText)));
+        defaultCodeArea.setOnKeyPressed(event -> Platform.runLater(() -> handleKeyReleased(event, defaultCodeArea)));
+        defaultCodeArea.focusedProperty().addListener((obs, oldVal, newVal) -> {
+            if (!newVal) {
+                autoCompletePopup.hide();
+            }
+        });
+        defaultCodeArea.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> autoCompletePopup.hide());
 
         Platform.runLater(() -> {
             mainSplitPane.setDividerPositions(0.2);
@@ -109,7 +118,9 @@ public class PostQController {
             if (selected != null) {
                 Item item = selected.getValue();
                 if (item.getItemType() == ItemType.DB && selected.getChildren().isEmpty()) {
-                    loadTablesForDatabase(selected);
+                    List<TreeItem<Item>> tables = DatabaseManager.INSTANCE.loadTables((Database) selected.getValue());
+                    selected.getChildren().clear();
+                    selected.getChildren().addAll(tables);
                 } else if (item.getItemType() == ItemType.TABLE) {
                     Table table = (Table) item;
                     Tab currentTab = sqlTabPane.getSelectionModel().getSelectedItem();
@@ -190,16 +201,27 @@ public class PostQController {
 
         dialog.setResultConverter(button -> {
             if (button.getButtonData() == ButtonBar.ButtonData.OK_DONE) {
-                    Connection conn = DatabaseManager.getConnection(database);
+                    Connection conn = DatabaseManager.INSTANCE.getConnection(database);
                     TreeItem<Item> item = new TreeItem<>(database);
                     dbTreeView.getRoot().getChildren().add(item);
-                    connections.put(titleField.getText(),conn);
                     return conn;
             }
             return null;
         });
 
         dialog.showAndWait();
+    }
+
+    private Database getDatabase(){
+        TreeItem<Item> selected = dbTreeView.getSelectionModel().getSelectedItem();
+        if (selected == null || selected == dbTreeView.getRoot()) {
+            Fxs.showAlert("No Database Selected", "Please select a database first.");
+        }
+        TreeItem<Item> selectedDB = selected;
+        if(selected.getValue().getItemType().equals(ItemType.TABLE)){
+            selectedDB= selected.getParent();
+        }
+        return (Database) selectedDB.getValue();
     }
 
     private void onRunQuery() {
@@ -215,7 +237,7 @@ public class PostQController {
         }
 
         String dbName = ((Database)selectedDB.getValue()).getTitle();
-        Connection connection = connections.get(dbName);
+        Connection connection = DatabaseManager.INSTANCE.getConnection(dbName);
 
         if (connection == null) {
             Fxs.showAlert("Connection Error", "Database not connected.");
@@ -286,39 +308,12 @@ public class PostQController {
 
 
 
-    private void loadTablesForDatabase(TreeItem<Item> dbItem) {
-        Database dbName = (Database) dbItem.getValue();
-
-        Connection conn = connections.get(dbName.getTitle());
-        if(Objects.isNull(conn)){
-            conn = DatabaseManager.getConnection(dbName);
-            connections.put(dbName.getTitle(), conn);
-        }
-
-
-
-        try {
-            DatabaseMetaData meta = conn.getMetaData();
-            ResultSet tables = meta.getTables(null, null, "%", new String[]{"TABLE"});
-            dbItem.getChildren().clear();
-            while (tables.next()) {
-                String tableName = tables.getString("TABLE_NAME");
-                Table table = new Table();
-                table.setTableName(tableName);
-                TreeItem<Item> tableItem = new TreeItem<>(table);
-                dbItem.getChildren().add(tableItem);
-            }
-        } catch (SQLException e) {
-            Fxs.showAlert("Error", "Could not load tables: " + e.getMessage());
-        }
-    }
-
 
 
     private void showTableStructure(TreeItem<Item> tableItem) {
         Table table = (Table) tableItem.getValue();
         Database database = (Database) tableItem.getParent().getValue();
-        Connection conn = connections.get(database.getTitle());
+        Connection conn = DatabaseManager.INSTANCE.getConnection(database.getTitle());
 
         if (conn == null) {
             Fxs.showAlert("连接错误", "无法获取数据库连接：" + database.getTitle());
@@ -457,7 +452,7 @@ public class PostQController {
     private void showTableSample(TreeItem<Item> tableItem) {
         Table table = (Table) tableItem.getValue();
         Database database = (Database) tableItem.getParent().getValue();
-        Connection conn = connections.get(database.getTitle());
+        Connection conn = DatabaseManager.INSTANCE.getConnection(database.getTitle());
 
         if (conn == null) {
             Fxs.showAlert("连接错误", "无法获取数据库连接：" + database.getTitle());
@@ -549,6 +544,14 @@ public class PostQController {
         sqlEditor.textProperty().addListener((obs, oldText, newText) ->
                 sqlEditor.setStyleSpans(0, computeHighlighting(newText)));
 
+        sqlEditor.setOnKeyReleased(event -> Platform.runLater(() -> handleKeyReleased(event, sqlEditor)));
+        sqlEditor.focusedProperty().addListener((obs, oldVal, newVal) -> {
+            if (!newVal) {
+                autoCompletePopup.hide();
+            }
+        });
+        sqlEditor.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> autoCompletePopup.hide());
+
         Tab tab = new Tab(title, sqlEditor);
         tab.setClosable(true);
 
@@ -574,5 +577,73 @@ public class PostQController {
         return spansBuilder.create();
     }
 
+    private ContextMenu autoCompletePopup = new ContextMenu();
+
+    private void handleKeyReleased(KeyEvent event, CodeArea codeArea) {
+        String text = codeArea.getText();
+        int caretPos = codeArea.getCaretPosition();
+
+
+        // 获取当前词
+        String word = getCurrentWord(text, caretPos);
+
+        Database database = getDatabase();
+        List<String> suggestions = null;
+        if(isTable(text,word)){
+            suggestions = DatabaseManager.INSTANCE.getTableSuggestion(database, word);
+        }else {
+            suggestions = DatabaseManager.INSTANCE.getFieldSuggestion(database, word);
+        }
+
+        if (!suggestions.isEmpty()) {
+            showAutoCompletePopup(codeArea, suggestions, word);
+        }else {
+            autoCompletePopup.hide();
+        }
+    }
+
+    private boolean isTable(String text, String word) {
+        return true;
+    }
+
+    private String getCurrentWord(String text, int caretPos) {
+        int start = caretPos - 1;
+        while (start >= 0 && Character.isLetterOrDigit(text.charAt(start))) {
+            start--;
+        }
+        return text.substring(start + 1, caretPos);
+    }
+
+    private List<String> getSuggestions(String word, Map<String, List<String>> tableFieldMap) {
+        List<String> suggest = new ArrayList<>(); //
+        if(word.length() == 0){
+            return suggest;
+        }
+
+        tableFieldMap.values().forEach(suggest::addAll);                // 字段名
+        return suggest.stream()
+                .filter(name -> name.toLowerCase().startsWith(word.toLowerCase()))
+                .collect(Collectors.toList());
+    }
+
+    private void showAutoCompletePopup(CodeArea codeArea, List<String> suggestions, String prefix) {
+        autoCompletePopup.getItems().clear();
+        for (String suggestion : suggestions) {
+            MenuItem item = new MenuItem(suggestion);
+            item.setOnAction(e -> {
+                int pos = codeArea.getCaretPosition();
+                String text = codeArea.getText();
+                String before = text.substring(0, pos - prefix.length());
+                String after = text.substring(pos);
+                codeArea.replaceText(before + suggestion + after);
+                codeArea.moveTo((before + suggestion).length());
+            });
+            autoCompletePopup.getItems().add(item);
+        }
+
+        // 显示在 caret 附近
+        autoCompletePopup.show(codeArea, codeArea.localToScreen(codeArea.getCaretBounds().get()).getMinX(),
+                codeArea.localToScreen(codeArea.getCaretBounds().get()).getMaxY());
+    }
 
 }
