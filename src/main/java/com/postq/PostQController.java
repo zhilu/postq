@@ -23,7 +23,6 @@ import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
-import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
@@ -33,27 +32,34 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.model.StyleSpans;
+import org.fxmisc.richtext.model.StyleSpansBuilder;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class PostQController {
 
     @FXML private SplitPane mainSplitPane;
     @FXML private TreeView<Item> dbTreeView;
     @FXML private TabPane sqlTabPane;
+    @FXML private CodeArea defaultCodeArea;
     @FXML private TabPane resultTabPane;
     @FXML private Button addDbButton;
     @FXML private Button queryButton;
@@ -85,6 +91,9 @@ public class PostQController {
         queryButton.setOnAction(e -> onRunQuery());
         newTabButton.setOnAction(e -> onQueryTab());
 
+        defaultCodeArea.textProperty().addListener((obs, oldText, newText) ->
+                defaultCodeArea.setStyleSpans(0, computeHighlighting(newText)));
+
         Platform.runLater(() -> {
             mainSplitPane.setDividerPositions(0.2);
         });
@@ -104,11 +113,12 @@ public class PostQController {
                 } else if (item.getItemType() == ItemType.TABLE) {
                     Table table = (Table) item;
                     Tab currentTab = sqlTabPane.getSelectionModel().getSelectedItem();
-                    if (currentTab != null && currentTab.getContent() instanceof TextArea textArea) {
-                        String currentText = textArea.getText();
+                    if (currentTab != null && currentTab.getContent() instanceof CodeArea codeArea) {
+                        String currentText = codeArea.getText();
                         String newText = currentText + (currentText.isEmpty() ? "" : "\n") + "SELECT * FROM " + table.getTableName() + ";\n";
-                        textArea.setText(newText);
-                        textArea.positionCaret(newText.length());
+                        codeArea.replaceText(newText);
+                        codeArea.moveTo(newText.length());
+                        codeArea.requestFollowCaret();
                     }
                 }
             }
@@ -131,15 +141,7 @@ public class PostQController {
     }
 
 
-    private Tab createNewSqlTab(String title) {
-        TextArea textArea = new TextArea();
-        textArea.setWrapText(true);
 
-        Tab tab = new Tab(title, textArea);
-        tab.setClosable(true);
-
-        return tab;
-    }
 
     private void onAddDatabase() {
         Dialog<Connection> dialog = new Dialog<>();
@@ -221,14 +223,15 @@ public class PostQController {
         }
 
         Tab selectedTab = sqlTabPane.getSelectionModel().getSelectedItem();
-        if (selectedTab == null || !(selectedTab.getContent() instanceof TextArea textArea)) {
+        if (selectedTab == null || !(selectedTab.getContent() instanceof CodeArea codeArea)) {
             Fxs.showAlert("错误", "未找到有效的 SQL 编辑区域");
             return;
         }
-        String sql = textArea.getText();
+        String sql = codeArea.getText();
 
         TableView<List<String>> resultTable = new TableView<>();
 
+        int count = 0;
         long start = System.currentTimeMillis();
         try (Statement stmt = connection.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
             resultTable.getItems().clear();
@@ -240,15 +243,17 @@ public class PostQController {
             for (int i = 1; i <= cols; i++) {
                 final int colIdx = i;
                 TableColumn<List<String>, String> column = new TableColumn<>(meta.getColumnName(i));
-                column.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(data.getValue().get(colIdx - 1)));
+                column.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(colIdx - 1)));
                 resultTable.getColumns().add(column);
             }
+
 
             while (rs.next()) {
                 List<String> row = new ArrayList<>();
                 for (int i = 1; i <= cols; i++) {
                     row.add(rs.getString(i));
                 }
+                count++;
                 resultTable.getItems().add(row);
             }
 
@@ -259,7 +264,7 @@ public class PostQController {
 
         long duration = end - start;
 
-        Label statusLabel = new Label("查询成功 | 耗时 " + duration + "ms");
+        Label statusLabel = new Label("查询成功 | 耗时 " + duration + "ms | 查询数量：" + count + "条" );
 
         HBox statusBar = new HBox(statusLabel);
         statusBar.setMinHeight(24);
@@ -464,8 +469,8 @@ public class PostQController {
 
         // 将查询的 SQL 语句设置到 SQL 编辑器
         Tab currentTab = sqlTabPane.getSelectionModel().getSelectedItem();
-        if (currentTab != null && currentTab.getContent() instanceof TextArea textArea) {
-            textArea.setText(sql);
+        if (currentTab != null && currentTab.getContent() instanceof CodeArea codeArea) {
+            codeArea.replaceText(sql);
         }
 
         TableView<List<String>> resultTable = new TableView<>();
@@ -524,6 +529,50 @@ public class PostQController {
         resultTabPane.getSelectionModel().select(resultTab);
     }
 
+
+    private static final String[] KEYWORDS = new String[]{
+            "SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE",
+            "CREATE", "TABLE", "DROP", "ALTER", "INTO", "VALUES",
+            "JOIN", "ON", "AS", "AND", "OR", "NOT", "NULL", "IS"
+    };
+
+    private static final Pattern PATTERN = Pattern.compile(
+            "(?<KEYWORD>\\b(" + String.join("|", KEYWORDS) + ")\\b)"
+                    + "|(?<STRING>'[^']*')"
+                    + "|(?<COMMENT>--[^\n]*)",
+            Pattern.CASE_INSENSITIVE
+    );
+    
+    private Tab createNewSqlTab(String title) {
+        CodeArea sqlEditor = new CodeArea();
+        sqlEditor.setWrapText(true);
+        sqlEditor.textProperty().addListener((obs, oldText, newText) ->
+                sqlEditor.setStyleSpans(0, computeHighlighting(newText)));
+
+        Tab tab = new Tab(title, sqlEditor);
+        tab.setClosable(true);
+
+        return tab;
+    }
+
+    private StyleSpans<? extends Collection<String>> computeHighlighting(String text) {
+        Matcher matcher = PATTERN.matcher(text);
+        int lastKwEnd = 0;
+        StyleSpansBuilder<Collection<String>> spansBuilder = new StyleSpansBuilder<>();
+        while (matcher.find()) {
+            String styleClass =
+                    matcher.group("KEYWORD") != null ? "keyword" :
+                            matcher.group("STRING") != null ? "string" :
+                                    matcher.group("COMMENT") != null ? "comment" :
+                                            null;
+            assert styleClass != null;
+            spansBuilder.add(Collections.emptyList(), matcher.start() - lastKwEnd);
+            spansBuilder.add(Collections.singleton(styleClass), matcher.end() - matcher.start());
+            lastKwEnd = matcher.end();
+        }
+        spansBuilder.add(Collections.emptyList(), text.length() - lastKwEnd);
+        return spansBuilder.create();
+    }
 
 
 }

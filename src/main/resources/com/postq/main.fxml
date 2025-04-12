@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
+<?import org.fxmisc.richtext.CodeArea?>
 <BorderPane xmlns:fx="http://javafx.com/fxml" fx:controller="com.postq.PostQController" stylesheets="@styles.css">
     <top>
         <ToolBar>
@@ -21,7 +22,7 @@
                 <TabPane fx:id="sqlTabPane">
                     <tabs>
                         <Tab text="SQL 1" closable="false">
-                            <TextArea promptText="Write your SQL here..." wrapText="true" />
+                            <CodeArea styleClass="code-area" wrapText="true" fx:id="defaultCodeArea" />
                         </Tab>
                     </tabs>
                 </TabPane>

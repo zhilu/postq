@@ -2,6 +2,7 @@ module com.postq {
     requires javafx.controls;
     requires javafx.fxml;
     requires java.sql;
+    requires org.fxmisc.richtext;
     requires static lombok;
 
 

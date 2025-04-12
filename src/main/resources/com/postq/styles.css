@@ -6,11 +6,21 @@
     -fx-cell-size: 30px;
 }
 
-.sql-editor {
+.code-area {
     -fx-padding: 3 3 3 3;
+    -fx-font-family: 'Monospaced';
+    -fx-font-size: 20;
+}
+
+.code-area .paragraph-box {
+    -fx-padding: 10px;
 }
 
 .table-result {
+    -fx-padding: 3 3 3 3;
+}
+
+.tab-sql {
     -fx-padding: 3 3 3 3;
 }
 
@@ -22,4 +32,16 @@
     -fx-max-height: 24px;
     -fx-pref-height: 24px;
 }
+.keyword {
+    -fx-fill: darkblue;
+    -fx-font-weight: bold;
+}
 
+.string {
+    -fx-fill: darkgreen;
+}
+
+.comment {
+    -fx-fill: grey;
+    -fx-font-style: italic;
+}
