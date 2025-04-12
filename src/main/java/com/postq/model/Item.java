@@ -11,4 +11,8 @@ import lombok.Setter;
 @Getter
 public class Item {
     private ItemType itemType;
+
+    public boolean isTable() {
+        return ItemType.TABLE.equals(itemType);
+    }
 }

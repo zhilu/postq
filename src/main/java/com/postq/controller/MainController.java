@@ -6,7 +6,7 @@ import com.postq.model.ItemType;
 import com.postq.model.Table;
 import com.postq.service.ConfigManager;
 import com.postq.service.DatabaseManager;
-import com.postq.util.Fxs;
+import com.postq.util.FXs;
 import com.postq.util.SQLs;
 import com.postq.util.Strings;
 import javafx.application.Platform;
@@ -14,6 +14,7 @@ import javafx.beans.property.SimpleStringProperty;
 import javafx.fxml.FXML;
 import javafx.geometry.Bounds;
 import javafx.geometry.Orientation;
+import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
@@ -23,6 +24,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.PasswordField;
+import javafx.scene.control.SelectionMode;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
@@ -33,6 +35,8 @@ import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyCodeCombination;
+import javafx.scene.input.KeyCombination;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.GridPane;
@@ -45,11 +49,6 @@ import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
 
 import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
-import java.sql.SQLException;
-import java.sql.Statement;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -121,8 +120,53 @@ public class MainController {
         autoCompletePopup.setAutoHide(true);
         autoCompletePopup.setHideOnEscape(true);
         autoCompletePopup.setOnHidden(e -> suggestionList.getSelectionModel().clearSelection());
+
+        Platform.runLater(() -> {
+            mainSplitPane.setDividerPositions(0.2);
+
+            Scene scene = mainSplitPane.getScene();
+            if (scene != null) {
+                // F9 -> 运行查询
+                scene.getAccelerators().put(
+                        new KeyCodeCombination(KeyCode.F9),
+                        this::onRunQuery
+                );
+
+                // Alt + S -> 显示表结构
+                scene.getAccelerators().put(
+                        new KeyCodeCombination(KeyCode.S, KeyCombination.ALT_DOWN),
+                        this::onShowTableStructure
+                );
+
+            } else {
+                // 界面尚未加载时监听 scene 变化
+                mainSplitPane.sceneProperty().addListener((obs, oldScene, newScene) -> {
+                    if (newScene != null) {
+                        newScene.getAccelerators().put(
+                                new KeyCodeCombination(KeyCode.F9),
+                                this::onRunQuery
+                        );
+                        newScene.getAccelerators().put(
+                                new KeyCodeCombination(KeyCode.S, KeyCombination.ALT_DOWN),
+                                this::onShowTableStructure
+                        );
+                    }
+                });
+            }
+        });
     }
 
+    private void onShowTableStructure() {
+        TreeItem<Item> selected = dbTreeView.getSelectionModel().getSelectedItem();
+        if (selected == null || selected == dbTreeView.getRoot()) {
+            FXs.showAlert("No Database Selected", "Please select a database first.");
+        }else if(selected.getValue().isTable()){
+            showTableStructure(selected);
+        }
+
+
+
+    }
 
 
     private void onTreeClick(MouseEvent event){
@@ -228,7 +272,7 @@ public class MainController {
     private Database getDatabase(){
         TreeItem<Item> selected = dbTreeView.getSelectionModel().getSelectedItem();
         if (selected == null || selected == dbTreeView.getRoot()) {
-            Fxs.showAlert("No Database Selected", "Please select a database first.");
+            FXs.showAlert("No Database Selected", "Please select a database first.");
             return null;
         }
         TreeItem<Item> selectedDB = selected;
@@ -243,7 +287,7 @@ public class MainController {
 
         Tab selectedTab = sqlTabPane.getSelectionModel().getSelectedItem();
         if (selectedTab == null || !(selectedTab.getContent() instanceof CodeArea codeArea)) {
-            Fxs.showAlert("错误", "未找到有效的 SQL 编辑区域");
+            FXs.showAlert("错误", "未找到有效的 SQL 编辑区域");
             return;
         }
         int caretPosition = codeArea.getCaretPosition();
@@ -259,6 +303,7 @@ public class MainController {
 
         long start = System.currentTimeMillis();
         TableView<List<String>> resultTable = DatabaseManager.INSTANCE.query(database, sql);
+        resultTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         int count = resultTable.getItems().size();
         long end = System.currentTimeMillis();
 
@@ -294,7 +339,7 @@ public class MainController {
         Connection conn = DatabaseManager.INSTANCE.getConnection(database.getTitle());
 
         if (conn == null) {
-            Fxs.showAlert("连接错误", "无法获取数据库连接：" + database.getTitle());
+            FXs.showAlert("连接错误", "无法获取数据库连接：" + database.getTitle());
             return;
         }
 
@@ -350,8 +395,6 @@ public class MainController {
         dialog.getDialogPane().setMinHeight(600);
         // 使用 showAndWait() 确保对话框阻塞线程并正常响应关闭
         dialog.showAndWait();
-
-
     }
 
 
@@ -379,7 +422,7 @@ public class MainController {
         Connection conn = DatabaseManager.INSTANCE.getConnection(database.getTitle());
 
         if (conn == null) {
-            Fxs.showAlert("连接错误", "无法获取数据库连接：" + database.getTitle());
+            FXs.showAlert("连接错误", "无法获取数据库连接：" + database.getTitle());
             return;
         }
 

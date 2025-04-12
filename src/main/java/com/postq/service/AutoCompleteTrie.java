@@ -1,4 +1,4 @@
-package com.postq.util;
+package com.postq.service;
 
 import java.util.ArrayList;
 import java.util.Collections;

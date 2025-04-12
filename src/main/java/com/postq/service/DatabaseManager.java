@@ -3,10 +3,7 @@ package com.postq.service;
 import com.postq.model.Database;
 import com.postq.model.Item;
 import com.postq.model.Table;
-import com.postq.util.AutoCompleteTrie;
-import com.postq.util.Fxs;
-import javafx.collections.FXCollections;
-import javafx.collections.ObservableList;
+import com.postq.util.FXs;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TreeItem;
@@ -48,7 +45,7 @@ public class DatabaseManager {
             conn = DriverManager.getConnection(url, db.getUserName(), db.getPassword());
             connections.put(db.getTitle(), conn);
         } catch (SQLException e) {
-            Fxs.showAlert("Connection Error", "No active connection for " + db.getTitle());
+            FXs.showAlert("Connection Error", "No active connection for " + db.getTitle());
         }
         return conn;
     }
@@ -69,7 +66,7 @@ public class DatabaseManager {
                 trie.insert(tableName);
             }
         } catch (SQLException e) {
-            Fxs.showAlert("Error", "Could not load tables: " + e.getMessage());
+            FXs.showAlert("Error", "Could not load tables: " + e.getMessage());
         }
         tables.put(database.getTitle(), trie);
         return tableItems;
@@ -103,7 +100,7 @@ public class DatabaseManager {
                 }
             }
         } catch (Exception e){
-            Fxs.showAlert("错误", "获取索引失败: " + e.getMessage());
+            FXs.showAlert("错误", "获取索引失败: " + e.getMessage());
         }
         return data;
     }
@@ -151,7 +148,7 @@ public class DatabaseManager {
                 }
             }
         } catch (Exception e){
-            Fxs.showAlert("错误", "获取表结构失败: " + e.getMessage());
+            FXs.showAlert("错误", "获取表结构失败: " + e.getMessage());
         }
         return data;
     }
@@ -185,7 +182,7 @@ public class DatabaseManager {
             }
 
         } catch (SQLException e) {
-            Fxs.showAlert("查询失败", "无法执行查询：" + e.getMessage());
+            FXs.showAlert("查询失败", "无法执行查询：" + e.getMessage());
         }
         return resultTable;
     }

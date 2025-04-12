@@ -1,4 +1,4 @@
-package com.postq.util;
+package com.postq.service;
 
 import java.util.HashMap;
 import java.util.Map;
