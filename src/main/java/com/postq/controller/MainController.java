@@ -1,9 +1,11 @@
-package com.postq;
+package com.postq.controller;
 
 import com.postq.model.Database;
 import com.postq.model.Item;
 import com.postq.model.ItemType;
 import com.postq.model.Table;
+import com.postq.service.ConfigManager;
+import com.postq.service.DatabaseManager;
 import com.postq.util.Fxs;
 import com.postq.util.SQLs;
 import com.postq.util.Strings;
@@ -43,7 +45,6 @@ import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
 
 import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -58,7 +59,7 @@ import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class PostQController {
+public class MainController {
 
     @FXML private SplitPane mainSplitPane;
     @FXML private TreeView<Item> dbTreeView;
@@ -79,7 +80,7 @@ public class PostQController {
         dbTreeView.setShowRoot(false);
         dbTreeView.setRoot(new TreeItem<>());
 
-        DatabaseConfigManager configManager = new DatabaseConfigManager();
+        ConfigManager configManager = new ConfigManager();
         Properties properties = configManager.loadConfig();
 
         if (!properties.isEmpty()) {
@@ -202,7 +203,7 @@ public class PostQController {
         database.setUserName(userField.getText());
         database.setPassword(passField.getText());
         database.setDatabaseName(dbField.getText());
-        new DatabaseConfigManager().saveConfig(
+        new ConfigManager().saveConfig(
                 titleField.getText(),
                 hostField.getText(),
                 portField.getText(),
@@ -238,31 +239,13 @@ public class PostQController {
     }
 
     private void onRunQuery() {
-        TreeItem<Item> selected = dbTreeView.getSelectionModel().getSelectedItem();
-        if (selected == null || selected == dbTreeView.getRoot()) {
-            Fxs.showAlert("No Database Selected", "Please select a database first.");
-            return;
-        }
-
-        TreeItem<Item> selectedDB = selected;
-        if(selected.getValue().getItemType().equals(ItemType.TABLE)){
-            selectedDB= selected.getParent();
-        }
-
-        String dbName = ((Database)selectedDB.getValue()).getTitle();
-        Connection connection = DatabaseManager.INSTANCE.getConnection(dbName);
-
-        if (connection == null) {
-            Fxs.showAlert("Connection Error", "Database not connected.");
-            return;
-        }
+        Database database = getDatabase();
 
         Tab selectedTab = sqlTabPane.getSelectionModel().getSelectedItem();
         if (selectedTab == null || !(selectedTab.getContent() instanceof CodeArea codeArea)) {
             Fxs.showAlert("错误", "未找到有效的 SQL 编辑区域");
             return;
         }
-        String text = codeArea.getText();
         int caretPosition = codeArea.getCaretPosition();
 
         String sql = codeArea.getSelectedText();
@@ -274,38 +257,9 @@ public class PostQController {
             return;
         }
 
-
-        TableView<List<String>> resultTable = new TableView<>();
-
-        int count = 0;
         long start = System.currentTimeMillis();
-        try (Statement stmt = connection.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
-            resultTable.getItems().clear();
-            resultTable.getColumns().clear();
-
-            ResultSetMetaData meta = rs.getMetaData();
-            int cols = meta.getColumnCount();
-
-            for (int i = 1; i <= cols; i++) {
-                final int colIdx = i;
-                TableColumn<List<String>, String> column = new TableColumn<>(meta.getColumnName(i));
-                column.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(colIdx - 1)));
-                resultTable.getColumns().add(column);
-            }
-
-
-            while (rs.next()) {
-                List<String> row = new ArrayList<>();
-                for (int i = 1; i <= cols; i++) {
-                    row.add(rs.getString(i));
-                }
-                count++;
-                resultTable.getItems().add(row);
-            }
-
-        } catch (SQLException e) {
-            Fxs.showAlert("Query Failed", e.getMessage());
-        }
+        TableView<List<String>> resultTable = DatabaseManager.INSTANCE.query(database, sql);
+        int count = resultTable.getItems().size();
         long end = System.currentTimeMillis();
 
         long duration = end - start;
@@ -344,114 +298,60 @@ public class PostQController {
             return;
         }
 
-        try {
-            // ========== 字段结构 TableView ==========
-            TableView<List<String>> columnTable = new TableView<>();
-            TableColumn<List<String>, String> colName = new TableColumn<>("字段名");
-            colName.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(0)));
+        // ========== 字段结构 TableView ==========
+        TableView<List<String>> columnTable = new TableView<>();
+        TableColumn<List<String>, String> colName = new TableColumn<>("字段名");
+        colName.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(0)));
 
-            TableColumn<List<String>, String> colType = new TableColumn<>("类型");
-            colType.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(1)));
+        TableColumn<List<String>, String> colType = new TableColumn<>("类型");
+        colType.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(1)));
 
-            TableColumn<List<String>, String> colNotNull = new TableColumn<>("非空");
-            colNotNull.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(2)));
+        TableColumn<List<String>, String> colNotNull = new TableColumn<>("非空");
+        colNotNull.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(2)));
 
-            TableColumn<List<String>, String> colDefault = new TableColumn<>("默认值");
-            colDefault.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(3)));
+        TableColumn<List<String>, String> colDefault = new TableColumn<>("默认值");
+        colDefault.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(3)));
 
-            TableColumn<List<String>, String> colComment = new TableColumn<>("注释");
-            colComment.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(4)));
+        TableColumn<List<String>, String> colComment = new TableColumn<>("注释");
+        colComment.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(4)));
 
-            columnTable.getColumns().addAll(colName, colType, colNotNull, colDefault, colComment);
+        columnTable.getColumns().addAll(colName, colType, colNotNull, colDefault, colComment);
 
-            String colSql = """
-        SELECT 
-            a.attname AS column_name,
-            format_type(a.atttypid, a.atttypmod) AS data_type,
-            a.attnotnull AS not_null,
-            pg_get_expr(d.adbin, d.adrelid) AS default_value,
-            col_description(a.attrelid, a.attnum) AS comment
-        FROM 
-            pg_attribute a
-        LEFT JOIN pg_attrdef d ON a.attrelid = d.adrelid AND a.attnum = d.adnum
-        WHERE 
-            a.attrelid = ?::regclass
-            AND a.attnum > 0
-            AND NOT a.attisdropped
-        ORDER BY a.attnum;
-        """;
+        List<List<String>> tableSchema = DatabaseManager.INSTANCE.getTableSchema(database, table.getTableName());
+        columnTable.getItems().addAll(tableSchema);
 
-            try (PreparedStatement stmt = conn.prepareStatement(colSql)) {
-                stmt.setString(1, table.getTableName());
-                ResultSet rs = stmt.executeQuery();
-                while (rs.next()) {
-                    String name = rs.getString("column_name");
-                    String type = rs.getString("data_type");
-                    String notNull = rs.getBoolean("not_null") ? "是" : "否";
-                    String defVal = rs.getString("default_value");
-                    String comment = rs.getString("comment");
+        // ========== 索引 TableView ==========
+        TableView<List<String>> indexTable = new TableView<>();
+        TableColumn<List<String>, String> idxName = new TableColumn<>("索引名");
+        idxName.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(0)));
 
-                    if (name != null && !name.trim().isEmpty()) {
-                        List<String> row = List.of(
-                                name,
-                                type != null ? type : "",
-                                notNull,
-                                defVal != null ? defVal : "",
-                                comment != null ? comment : ""
-                        );
-                        columnTable.getItems().add(row);
-                    }
-                }
-            }
+        TableColumn<List<String>, String> idxDef = new TableColumn<>("定义");
+        idxDef.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(1)));
 
-            // ========== 索引 TableView ==========
-            TableView<List<String>> indexTable = new TableView<>();
-            TableColumn<List<String>, String> idxName = new TableColumn<>("索引名");
-            idxName.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(0)));
+        indexTable.getColumns().addAll(idxName, idxDef);
 
-            TableColumn<List<String>, String> idxDef = new TableColumn<>("定义");
-            idxDef.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(1)));
+        List<List<String>> indexData = DatabaseManager.INSTANCE.getIndex(database, table.getTableName());
+        indexTable.getItems().addAll(indexData);
 
-            indexTable.getColumns().addAll(idxName, idxDef);
+        // ========== 使用上下结构的 SplitPane ==========
+        SplitPane splitPane = new SplitPane();
+        splitPane.setOrientation(Orientation.VERTICAL);
+        splitPane.getItems().addAll(columnTable, indexTable);
+        splitPane.setDividerPositions(0.7); // 上70%，下30%
 
-            String idxSql = "SELECT indexname, indexdef FROM pg_indexes WHERE tablename = ?";
-            try (PreparedStatement stmt = conn.prepareStatement(idxSql)) {
-                stmt.setString(1, table.getTableName());
-                ResultSet rs = stmt.executeQuery();
-                while (rs.next()) {
-                    String name = rs.getString("indexname");
-                    String def = rs.getString("indexdef");
-                    if (name != null && !name.trim().isEmpty()) {
-                        List<String> row = List.of(name, def != null ? def : "");
-                        indexTable.getItems().add(row);
-                    }
-                }
-            }
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("表结构 - " + table.getTableName());
+        dialog.getDialogPane().setContent(splitPane);
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.setResizable(true);
 
-            // ========== 使用上下结构的 SplitPane ==========
-            SplitPane splitPane = new SplitPane();
-            splitPane.setOrientation(Orientation.VERTICAL);
-            splitPane.getItems().addAll(columnTable, indexTable);
-            splitPane.setDividerPositions(0.7); // 上70%，下30%
-
-            Dialog<Void> dialog = new Dialog<>();
-            dialog.setTitle("表结构 - " + table.getTableName());
-            dialog.getDialogPane().setContent(splitPane);
-            dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
-            dialog.setResizable(true);
-
-            // 设置Dialog的最小宽度和最小高度来控制显示大小
-            dialog.getDialogPane().setMinWidth(960);  // 设置最小宽度
-            dialog.getDialogPane().setMinHeight(600);
+        // 设置Dialog的最小宽度和最小高度来控制显示大小
+        dialog.getDialogPane().setMinWidth(960);  // 设置最小宽度
+        dialog.getDialogPane().setMinHeight(600);
+        // 使用 showAndWait() 确保对话框阻塞线程并正常响应关闭
+        dialog.showAndWait();
 
 
-
-            // 使用 showAndWait() 确保对话框阻塞线程并正常响应关闭
-            dialog.showAndWait();
-
-        } catch (SQLException e) {
-            Fxs.showAlert("错误", "获取表结构失败: " + e.getMessage());
-        }
     }
 
 
@@ -492,39 +392,8 @@ public class PostQController {
             codeArea.replaceText(sql);
         }
 
-        TableView<List<String>> resultTable = new TableView<>();
-
-
         long start = System.currentTimeMillis();
-        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
-            resultTable.getItems().clear();
-            resultTable.getColumns().clear();
-
-            // 获取结果集元数据
-            ResultSetMetaData meta = rs.getMetaData();
-            int cols = meta.getColumnCount();
-
-            // 设置表头
-            for (int i = 1; i <= cols; i++) {
-                final int colIdx = i;
-                TableColumn<List<String>, String> column = new TableColumn<>(meta.getColumnName(i));
-                column.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(data.getValue().get(colIdx - 1)));
-                resultTable.getColumns().add(column);
-            }
-
-            // 填充数据
-            while (rs.next()) {
-                List<String> row = new ArrayList<>();
-                for (int i = 1; i <= cols; i++) {
-                    row.add(rs.getString(i));
-                }
-                resultTable.getItems().add(row);
-            }
-
-        } catch (SQLException e) {
-            Fxs.showAlert("查询失败", "无法执行查询：" + e.getMessage());
-        }
-
+        TableView<List<String>> queryResult = DatabaseManager.INSTANCE.query(database, sql);
         long end = System.currentTimeMillis();
 
         long duration = end - start;
@@ -535,7 +404,7 @@ public class PostQController {
         statusBar.setMaxHeight(24);
         statusBar.setStyle("-fx-background-color: #f0f0f0; -fx-padding: 4 8;");
 
-        VBox resultBox = new VBox(resultTable, statusBar);
+        VBox resultBox = new VBox(queryResult, statusBar);
         resultBox.setSpacing(5);
         VBox.setVgrow(statusBar, Priority.NEVER);
 

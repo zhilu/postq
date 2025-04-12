@@ -11,4 +11,6 @@ module com.postq {
     exports com.postq.model;
     exports com.postq.util;
     opens com.postq.util to javafx.fxml;
+    exports com.postq.controller;
+    opens com.postq.controller to javafx.fxml;
 }

@@ -1,4 +1,4 @@
-package com.postq;
+package com.postq.service;
 
 import com.postq.model.Database;
 
@@ -7,11 +7,11 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Properties;
 
-public class DatabaseConfigManager {
+public class ConfigManager {
     private static final String CONFIG_FILE = System.getProperty("user.home")+ "/database_config.properties";
     private Properties properties;
 
-    public DatabaseConfigManager() {
+    public ConfigManager() {
         this.properties = new Properties();
     }
 

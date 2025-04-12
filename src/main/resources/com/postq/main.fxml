@@ -2,7 +2,7 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 <?import org.fxmisc.richtext.CodeArea?>
-<BorderPane xmlns:fx="http://javafx.com/fxml" fx:controller="com.postq.PostQController" stylesheets="@styles.css">
+<BorderPane xmlns:fx="http://javafx.com/fxml" fx:controller="com.postq.controller.MainController" stylesheets="@styles.css">
     <top>
         <ToolBar>
             <Button fx:id="addDbButton" text="Add DB" />
