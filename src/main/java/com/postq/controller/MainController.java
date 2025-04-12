@@ -55,6 +55,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -123,38 +124,11 @@ public class MainController {
         autoCompletePopup.setHideOnEscape(true);
         autoCompletePopup.setOnHidden(e -> suggestionList.getSelectionModel().clearSelection());
 
+        FXs.bind(mainSplitPane,new KeyCodeCombination(KeyCode.F9), this::onRunQuery);
+        FXs.bind(mainSplitPane,new KeyCodeCombination(KeyCode.S, KeyCombination.ALT_DOWN), this::onShowTableStructure);
+
         Platform.runLater(() -> {
             mainSplitPane.setDividerPositions(0.2);
-
-            Scene scene = mainSplitPane.getScene();
-            if (scene != null) {
-                // F9 -> 运行查询
-                scene.getAccelerators().put(
-                        new KeyCodeCombination(KeyCode.F9),
-                        this::onRunQuery
-                );
-
-                // Alt + S -> 显示表结构
-                scene.getAccelerators().put(
-                        new KeyCodeCombination(KeyCode.S, KeyCombination.ALT_DOWN),
-                        this::onShowTableStructure
-                );
-
-            } else {
-                // 界面尚未加载时监听 scene 变化
-                mainSplitPane.sceneProperty().addListener((obs, oldScene, newScene) -> {
-                    if (newScene != null) {
-                        newScene.getAccelerators().put(
-                                new KeyCodeCombination(KeyCode.F9),
-                                this::onRunQuery
-                        );
-                        newScene.getAccelerators().put(
-                                new KeyCodeCombination(KeyCode.S, KeyCombination.ALT_DOWN),
-                                this::onShowTableStructure
-                        );
-                    }
-                });
-            }
         });
     }
 
