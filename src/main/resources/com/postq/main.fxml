@@ -10,6 +10,8 @@
             <Button fx:id="newTabButton" text="New Tab" />
             <Separator orientation="VERTICAL" />
             <Button fx:id="queryButton" text="Run Query" />
+            <Separator orientation="VERTICAL" />
+            <Button fx:id="formatButton" text="Format SQL" />
 
         </ToolBar>
     </top>

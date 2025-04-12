@@ -68,6 +68,7 @@ public class MainController {
     @FXML private Button addDbButton;
     @FXML private Button queryButton;
     @FXML private Button newTabButton;
+    @FXML private Button formatButton;
     @FXML private Label statusLabel;
 
     private final ListView<String> suggestionList = new ListView<>();
@@ -96,6 +97,7 @@ public class MainController {
         addDbButton.setOnAction(e -> onAddDatabase());
         queryButton.setOnAction(e -> onRunQuery());
         newTabButton.setOnAction(e -> onQueryTab());
+        formatButton.setOnAction(e -> formatSQL());
 
         defaultCodeArea.textProperty().addListener((obs, oldText, newText) ->
                 defaultCodeArea.setStyleSpans(0, computeHighlighting(newText)));
@@ -154,6 +156,17 @@ public class MainController {
                 });
             }
         });
+    }
+
+    private void formatSQL() {
+        Tab currentTab = sqlTabPane.getSelectionModel().getSelectedItem();
+        if (currentTab != null && currentTab.getContent() instanceof CodeArea codeArea) {
+            String sql = codeArea.getText();
+            String newSQL = SQLs.formatSQL(sql);
+            codeArea.replaceText(newSQL);
+            codeArea.moveTo(newSQL.length());
+            codeArea.requestFollowCaret();
+        }
     }
 
     private void onShowTableStructure() {
@@ -301,6 +314,11 @@ public class MainController {
             return;
         }
 
+        queryAndDisplay(database, sql);
+
+    }
+
+    public void queryAndDisplay(Database database,String sql){
         long start = System.currentTimeMillis();
         TableView<List<String>> resultTable = DatabaseManager.INSTANCE.query(database, sql);
         resultTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
@@ -310,6 +328,18 @@ public class MainController {
         long duration = end - start;
 
         Label statusLabel = new Label("查询成功 | 耗时 " + duration + "ms | 查询数量：" + count + "条" );
+
+
+        ContextMenu contextMenu = new ContextMenu();
+
+        MenuItem copyAsSQLItem = new MenuItem("复制为 SQL 插入语句");
+        copyAsSQLItem.setOnAction(e -> {
+            SQLs.copySelectedRowsAsSQL(resultTable, "table_name_holder"); // 替换为你的表名
+        });
+
+        contextMenu.getItems().add(copyAsSQLItem);
+
+        resultTable.setContextMenu(contextMenu);
 
         HBox statusBar = new HBox(statusLabel);
         statusBar.setMinHeight(24);
@@ -328,7 +358,6 @@ public class MainController {
         resultTabPane.getTabs().add(resultTab);
         resultTabPane.getSelectionModel().select(resultTab);
     }
-
 
 
 
@@ -426,38 +455,8 @@ public class MainController {
             return;
         }
 
-        // 构造查询 SQL 语句，查询表的前 10 行数据
         String sql = "SELECT * FROM " + table.getTableName() + " LIMIT 10;";
-
-        // 将查询的 SQL 语句设置到 SQL 编辑器
-        Tab currentTab = sqlTabPane.getSelectionModel().getSelectedItem();
-        if (currentTab != null && currentTab.getContent() instanceof CodeArea codeArea) {
-            codeArea.replaceText(sql);
-        }
-
-        long start = System.currentTimeMillis();
-        TableView<List<String>> queryResult = DatabaseManager.INSTANCE.query(database, sql);
-        long end = System.currentTimeMillis();
-
-        long duration = end - start;
-
-        Label statusLabel = new Label("查询成功 | 耗时 " + duration + "ms");
-        HBox statusBar = new HBox(statusLabel);
-        statusBar.setMinHeight(24);
-        statusBar.setMaxHeight(24);
-        statusBar.setStyle("-fx-background-color: #f0f0f0; -fx-padding: 4 8;");
-
-        VBox resultBox = new VBox(queryResult, statusBar);
-        resultBox.setSpacing(5);
-        VBox.setVgrow(statusBar, Priority.NEVER);
-
-        Tab resultTab = new Tab("Result " + (resultTabPane.getTabs().size() + 1));
-        resultTab.setContent(resultBox);
-        resultTab.setClosable(true);
-
-        // 添加并选中这个结果页
-        resultTabPane.getTabs().add(resultTab);
-        resultTabPane.getSelectionModel().select(resultTab);
+        queryAndDisplay(database,sql);
     }
 
 
