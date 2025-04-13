@@ -18,9 +18,11 @@ public class AutoCompleteTrie {
 
     public List<String> getSuggestions(String prefix) {
         TrieNode node = root;
-        for (char ch : prefix.toCharArray()) {
-            node = node.children.get(ch);
-            if (node == null) return Collections.emptyList();
+        if(!prefix.isEmpty()) {
+            for (char ch : prefix.toCharArray()) {
+                node = node.children.get(ch);
+                if (node == null) return Collections.emptyList();
+            }
         }
         List<String> results = new ArrayList<>();
         dfs(node, new StringBuilder(prefix), results);

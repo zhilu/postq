@@ -46,11 +46,7 @@ import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
 
 import java.sql.Connection;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -481,11 +477,14 @@ public class MainController {
         if(Strings.isEmpty(word) || Objects.isNull(database)){
             return;
         }
-        List<String> suggestions = null;
-        if (isTable(text, word)) {
+        List<String> suggestions = new ArrayList<>();
+        if (Strings.isTable(text, word)) {
             suggestions = DatabaseManager.INSTANCE.getTableSuggestion(database, word);
-        } else {
-            suggestions = DatabaseManager.INSTANCE.getFieldSuggestion(database, word);
+        } else if(Strings.mayField(word, text)){
+            String tableName = Strings.getTableName(text, word);
+            if(Objects.nonNull(tableName)){
+                suggestions = DatabaseManager.INSTANCE.getFieldSuggestion(database,tableName, word);
+            }
         }
 
         if (!suggestions.isEmpty()) {
@@ -495,9 +494,7 @@ public class MainController {
         }
     }
 
-    private boolean isTable(String text, String word) {
-        return true;
-    }
+
 
     private String getCurrentWord(String text, int caretPos) {
         int start = caretPos - 1;
@@ -520,6 +517,10 @@ public class MainController {
                 String text = defaultCodeArea.getText();
                 String prefix = getCurrentWord(text, pos);
                 String before = text.substring(0, pos - prefix.length());
+                int index = prefix.indexOf('.');
+                if (index >= 0) {
+                    before = text.substring(0, pos - prefix.length() + index + 1);
+                }
                 String after = text.substring(pos);
                 defaultCodeArea.replaceText(before + selected + after);
                 defaultCodeArea.moveTo((before + selected).length());

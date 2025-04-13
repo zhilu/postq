@@ -29,6 +29,7 @@ public class DatabaseManager {
     private final Map<String,Connection> connections = new HashMap<>();
 
     private final Map<String,AutoCompleteTrie> tables = new HashMap<>();
+    private final Map<String,AutoCompleteTrie> fields = new HashMap<>();
 
     public Connection getConnection(String key){
         return connections.get(key);
@@ -80,8 +81,15 @@ public class DatabaseManager {
         return trie.getSuggestions(word);
     }
 
-    public List<String> getFieldSuggestion(Database database, String word) {
-        return new ArrayList<>();
+    public List<String> getFieldSuggestion(Database database, String tableName, String word) {
+        AutoCompleteTrie trie = fields.get(tableName);
+        if(Objects.isNull(trie)) {
+            trie = getTableTrie(database, tableName);
+            fields.put(tableName, trie);
+        }
+        int idx = word.lastIndexOf('.');
+        String fieldName = word.substring(idx+1);
+        return trie.getSuggestions(fieldName);
     }
 
     public List<List<String>> getIndex(Database database, String tableName) {
@@ -103,6 +111,36 @@ public class DatabaseManager {
             FXs.showAlert("错误", "获取索引失败: " + e.getMessage());
         }
         return data;
+    }
+
+    public AutoCompleteTrie getTableTrie(Database database, String tableName) {
+        String sql = """
+            SELECT a.attname
+            FROM pg_attribute a
+            JOIN pg_class c ON a.attrelid = c.oid
+            JOIN pg_namespace n ON c.relnamespace = n.oid
+            WHERE n.nspname = 'public' 
+              AND c.relname = ?
+              AND a.attnum > 0 
+              AND NOT a.attisdropped
+            ORDER BY a.attnum
+        """;
+        AutoCompleteTrie trie = new AutoCompleteTrie();
+        Connection conn = getConnection(database);
+
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, tableName);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    String column = rs.getString("attname");
+                    trie.insert(column);
+                }
+            }
+        } catch (Exception e){
+            FXs.showAlert("错误", "获取表字段失败: " + e.getMessage());
+        }
+        return trie;
     }
 
     public List<List<String>> getTableSchema(Database database, String tableName) {
