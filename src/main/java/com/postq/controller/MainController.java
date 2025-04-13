@@ -78,45 +78,14 @@ public class MainController {
 
     @FXML
     private void initialize() {
-        dbTreeView.setShowRoot(false);
-        dbTreeView.setRoot(new TreeItem<>());
-
-        ConfigManager configManager = new ConfigManager();
-        Properties properties = configManager.loadConfig();
-
-        if (!properties.isEmpty()) {
-            String[] dbTitles = configManager.getAllDatabaseTitles();
-            for (String dbTitle : dbTitles) {
-                TreeItem<Item> item = new TreeItem<>(configManager.getDatabase(dbTitle));
-                dbTreeView.getRoot().getChildren().add(item);
-            }
-        }
-
-        dbTreeView.setOnMouseClicked(this::onTreeClick);
-        dbTreeView.setOnContextMenuRequested(this::onTreeRightClick);
+        initTreeView(dbTreeView);
 
         addDbButton.setOnAction(e -> onAddDatabase());
         queryButton.setOnAction(e -> onRunQuery());
         newTabButton.setOnAction(e -> onQueryTab());
         formatButton.setOnAction(e -> formatSQL());
 
-        defaultCodeArea.textProperty().addListener((obs, oldText, newText) ->
-                defaultCodeArea.setStyleSpans(0, computeHighlighting(newText)));
-        defaultCodeArea.setOnKeyPressed(event -> Platform.runLater(() -> handleKeyReleased(event, defaultCodeArea)));
-        defaultCodeArea.focusedProperty().addListener((obs, oldVal, newVal) -> {
-            if (!newVal) {
-                autoCompletePopup.hide();
-            }
-        });
-        defaultCodeArea.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> autoCompletePopup.hide());
-
-        Platform.runLater(() -> {
-            mainSplitPane.setDividerPositions(0.2);
-        });
-
-        mainSplitPane.widthProperty().addListener((obs, oldVal, newVal) -> {
-            mainSplitPane.setDividerPositions(0.2);
-        });
+        initCodeArea(defaultCodeArea);
 
         suggestionList.addEventFilter(KeyEvent.KEY_RELEASED, this::confirmSuggestion);
         autoCompletePopup.getContent().add(suggestionList);
@@ -124,13 +93,41 @@ public class MainController {
         autoCompletePopup.setHideOnEscape(true);
         autoCompletePopup.setOnHidden(e -> suggestionList.getSelectionModel().clearSelection());
 
-        FXs.bind(mainSplitPane,new KeyCodeCombination(KeyCode.F9), this::onRunQuery);
-        FXs.bind(mainSplitPane,new KeyCodeCombination(KeyCode.S, KeyCombination.ALT_DOWN), this::onShowTableStructure);
+        FXs.initCode(mainSplitPane,this::onRunQuery,this::onShowTableStructure);
 
         Platform.runLater(() -> {
             mainSplitPane.setDividerPositions(0.2);
         });
     }
+
+    // 组将初始化
+    private void initCodeArea(CodeArea defaultCodeArea) {
+        defaultCodeArea.textProperty()
+                .addListener((obs, oldText, newText) ->
+                        defaultCodeArea.setStyleSpans(0, computeHighlighting(newText)));
+        defaultCodeArea.setOnKeyPressed(event -> Platform.runLater(() -> handleKeyReleased(event, defaultCodeArea)));
+        defaultCodeArea.focusedProperty().addListener((obs, oldVal, newVal) -> {
+            if (!newVal) {
+                autoCompletePopup.hide();
+            }
+        });
+        defaultCodeArea.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> autoCompletePopup.hide());
+    }
+
+    private void initTreeView(TreeView<Item> dbTreeView) {
+        dbTreeView.setShowRoot(false);
+        dbTreeView.setRoot(new TreeItem<>());
+        dbTreeView.setOnMouseClicked(this::onTreeClick);
+        dbTreeView.setOnContextMenuRequested(this::onTreeRightClick);
+
+        List<Item> databases = ConfigManager.instance.getDatabases();
+        for (Item database : databases) {
+            TreeItem<Item> item = new TreeItem<>(database);
+            dbTreeView.getRoot().getChildren().add(item);
+        }
+    }
+
+    // -- 按钮action
 
     private void formatSQL() {
         Tab currentTab = sqlTabPane.getSelectionModel().getSelectedItem();
@@ -150,9 +147,6 @@ public class MainController {
         }else if(selected.getValue().isTable()){
             showTableStructure(selected);
         }
-
-
-
     }
 
 
@@ -190,9 +184,14 @@ public class MainController {
 
     private void onQueryTab(){
         int tabCount = sqlTabPane.getTabs().size() + 1;
-        Tab newTab = createNewSqlTab("SQL " + tabCount);
-        sqlTabPane.getTabs().add(newTab);
-        sqlTabPane.getSelectionModel().select(newTab);
+        String title = "SQL "+ tabCount;
+        CodeArea sqlEditor = new CodeArea();
+        initCodeArea(sqlEditor);
+
+        Tab tab = new Tab(title, sqlEditor);
+        tab.setClosable(true);
+        sqlTabPane.getTabs().add(tab);
+        sqlTabPane.getSelectionModel().select(tab);
     }
 
 
@@ -447,25 +446,6 @@ public class MainController {
             Pattern.CASE_INSENSITIVE
     );
     
-    private Tab createNewSqlTab(String title) {
-        CodeArea sqlEditor = new CodeArea();
-        sqlEditor.setWrapText(true);
-        sqlEditor.textProperty().addListener((obs, oldText, newText) ->
-                sqlEditor.setStyleSpans(0, computeHighlighting(newText)));
-
-        sqlEditor.setOnKeyReleased(event -> Platform.runLater(() -> handleKeyReleased(event, sqlEditor)));
-        sqlEditor.focusedProperty().addListener((obs, oldVal, newVal) -> {
-            if (!newVal) {
-                autoCompletePopup.hide();
-            }
-        });
-        sqlEditor.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> autoCompletePopup.hide());
-
-        Tab tab = new Tab(title, sqlEditor);
-        tab.setClosable(true);
-
-        return tab;
-    }
 
     private StyleSpans<? extends Collection<String>> computeHighlighting(String text) {
         Matcher matcher = PATTERN.matcher(text);

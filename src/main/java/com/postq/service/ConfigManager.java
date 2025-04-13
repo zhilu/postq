@@ -1,14 +1,19 @@
 package com.postq.service;
 
 import com.postq.model.Database;
+import com.postq.model.Item;
+import javafx.scene.control.TreeItem;
 
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 
 public class ConfigManager {
     private static final String CONFIG_FILE = System.getProperty("user.home")+ "/database_config.properties";
+    public static ConfigManager instance = new ConfigManager();
     private Properties properties;
 
     public ConfigManager() {
@@ -46,6 +51,18 @@ public class ConfigManager {
                 .filter(key -> key.endsWith(".host"))
                 .map(key -> key.replace(".host", ""))
                 .toArray(String[]::new);
+    }
+
+    public List<Item> getDatabases() {
+        Properties properties = instance.loadConfig();
+        List<Item> databases = new ArrayList<>();
+        if (!properties.isEmpty()) {
+            String[] dbTitles = instance.getAllDatabaseTitles();
+            for (String dbTitle : dbTitles) {
+                databases.add( instance.getDatabase(dbTitle));
+            }
+        }
+        return databases;
     }
 
     public Database getDatabase(String dbTitle) {
