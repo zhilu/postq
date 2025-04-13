@@ -20,20 +20,7 @@ public class FXs {
         alert.showAndWait();
     }
 
-    public static void bind(SplitPane pane, KeyCodeCombination code, Runnable object) {
-        Platform.runLater(() -> {
-            Scene scene = pane.getScene();
-            if(Objects.isNull(scene)){
-                scene.getAccelerators().put(code, object);
-            }else {
-                pane.sceneProperty().addListener((obs, oldScene, newScene) -> {
-                    if (newScene != null) {
-                        newScene.getAccelerators().put(code, object);
-                    }
-                });
-            }
-        });
-    }
+
 
     public static void initCode(SplitPane pane, Runnable ... acitons) {
         Platform.runLater(() -> {

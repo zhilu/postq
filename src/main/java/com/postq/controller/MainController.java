@@ -14,7 +14,6 @@ import javafx.beans.property.SimpleStringProperty;
 import javafx.fxml.FXML;
 import javafx.geometry.Bounds;
 import javafx.geometry.Orientation;
-import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
@@ -35,8 +34,6 @@ import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyCodeCombination;
-import javafx.scene.input.KeyCombination;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.GridPane;
@@ -54,8 +51,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Properties;
-import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -72,6 +67,7 @@ public class MainController {
     @FXML private Button formatButton;
     @FXML private Label statusLabel;
 
+    private final Popup autoCompletePopup = new Popup();;
     private final ListView<String> suggestionList = new ListView<>();
 
 
@@ -87,11 +83,10 @@ public class MainController {
 
         initCodeArea(defaultCodeArea);
 
-        suggestionList.addEventFilter(KeyEvent.KEY_RELEASED, this::confirmSuggestion);
-        autoCompletePopup.getContent().add(suggestionList);
-        autoCompletePopup.setAutoHide(true);
-        autoCompletePopup.setHideOnEscape(true);
-        autoCompletePopup.setOnHidden(e -> suggestionList.getSelectionModel().clearSelection());
+        initPopup(autoCompletePopup);
+
+        suggestionList.setOnKeyReleased(this::confirmSuggestion);
+
 
         FXs.initCode(mainSplitPane,this::onRunQuery,this::onShowTableStructure);
 
@@ -100,12 +95,13 @@ public class MainController {
         });
     }
 
+
     // 组将初始化
     private void initCodeArea(CodeArea defaultCodeArea) {
         defaultCodeArea.textProperty()
                 .addListener((obs, oldText, newText) ->
                         defaultCodeArea.setStyleSpans(0, computeHighlighting(newText)));
-        defaultCodeArea.setOnKeyPressed(event -> Platform.runLater(() -> handleKeyReleased(event, defaultCodeArea)));
+        defaultCodeArea.setOnKeyReleased(event -> Platform.runLater(() -> handleKeyReleased(event, defaultCodeArea)));
         defaultCodeArea.focusedProperty().addListener((obs, oldVal, newVal) -> {
             if (!newVal) {
                 autoCompletePopup.hide();
@@ -121,10 +117,14 @@ public class MainController {
         dbTreeView.setOnContextMenuRequested(this::onTreeRightClick);
 
         List<Item> databases = ConfigManager.instance.getDatabases();
-        for (Item database : databases) {
-            TreeItem<Item> item = new TreeItem<>(database);
-            dbTreeView.getRoot().getChildren().add(item);
-        }
+        dbTreeView.getRoot().getChildren().addAll(databases.stream().map(TreeItem::new).toList());
+    }
+
+
+    private void initPopup(Popup autoCompletePopup) {
+        autoCompletePopup.getContent().add(suggestionList);
+        autoCompletePopup.setAutoHide(true);
+        autoCompletePopup.setHideOnEscape(true);
     }
 
     // -- 按钮action
@@ -185,10 +185,10 @@ public class MainController {
     private void onQueryTab(){
         int tabCount = sqlTabPane.getTabs().size() + 1;
         String title = "SQL "+ tabCount;
-        CodeArea sqlEditor = new CodeArea();
-        initCodeArea(sqlEditor);
+        CodeArea newCodeArea = new CodeArea();
+        initCodeArea(newCodeArea);
 
-        Tab tab = new Tab(title, sqlEditor);
+        Tab tab = new Tab(title, newCodeArea);
         tab.setClosable(true);
         sqlTabPane.getTabs().add(tab);
         sqlTabPane.getSelectionModel().select(tab);
@@ -482,9 +482,9 @@ public class MainController {
             return;
         }
         List<String> suggestions = null;
-        if(isTable(text,word)){
+        if (isTable(text, word)) {
             suggestions = DatabaseManager.INSTANCE.getTableSuggestion(database, word);
-        }else {
+        } else {
             suggestions = DatabaseManager.INSTANCE.getFieldSuggestion(database, word);
         }
 
@@ -510,38 +510,6 @@ public class MainController {
     public boolean isSymbol(char c) {
         String symbols = "!@#$%^&*()_+-=|{}[]:;\"'<>,.?/\\~`";
         return symbols.indexOf(c) >= 0;
-    }
-
-    public void popSuggestion(KeyEvent e){
-        if(!autoCompletePopup.isShowing()){
-            return;
-        }
-
-        if (e.getCode() == KeyCode.DOWN) {
-            suggestionList.getSelectionModel().selectNext();
-            suggestionList.scrollTo(suggestionList.getSelectionModel().getSelectedIndex());
-            e.consume();
-        } else if (e.getCode() == KeyCode.UP) {
-            suggestionList.getSelectionModel().selectPrevious();
-            suggestionList.scrollTo(suggestionList.getSelectionModel().getSelectedIndex());
-            e.consume();
-        } else if (e.getCode() == KeyCode.ENTER) {
-            String selected = suggestionList.getSelectionModel().getSelectedItem();
-            if (selected != null) {
-                String prefix = getCurrentWord(defaultCodeArea.getText(),defaultCodeArea.getCaretPosition());
-                int pos = defaultCodeArea.getCaretPosition();
-                String text = defaultCodeArea.getText();
-                String before = text.substring(0, pos - prefix.length());
-                String after = text.substring(pos);
-                defaultCodeArea.replaceText(before + selected + after);
-                defaultCodeArea.moveTo((before + selected).length());
-            }
-            autoCompletePopup.hide();
-            e.consume();
-        } else if (e.getCode() == KeyCode.ESCAPE) {
-            autoCompletePopup.hide();
-            e.consume();
-        }
     }
 
     public void confirmSuggestion(KeyEvent e){
@@ -572,7 +540,7 @@ public class MainController {
         }
     }
 
-    private Popup autoCompletePopup = new Popup();;
+
     private void showAutoCompletePopup(CodeArea codeArea, List<String> suggestions, String prefix) {
         suggestionList.getItems().setAll(suggestions);
         suggestionList.getSelectionModel().selectFirst();
@@ -597,8 +565,6 @@ public class MainController {
 
                     // 设置并显示弹窗
                     autoCompletePopup.getContent().setAll(suggestionList);
-                    autoCompletePopup.setAutoHide(true);
-                    autoCompletePopup.setHideOnEscape(true);
                     autoCompletePopup.show(codeArea.getScene().getWindow(), x, y);
                     suggestionList.requestFocus();
                 } else {
