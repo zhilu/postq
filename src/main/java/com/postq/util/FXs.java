@@ -1,14 +1,15 @@
 package com.postq.util;
 
 import javafx.application.Platform;
+import javafx.beans.property.SimpleStringProperty;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.SplitPane;
-import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyCodeCombination;
-import javafx.scene.input.KeyCombination;
+import javafx.scene.control.TableColumn;
+import javafx.scene.input.*;
 
+import java.util.List;
 import java.util.Objects;
 
 
@@ -56,5 +57,19 @@ public class FXs {
                 });
             }
         });
+    }
+
+
+    public static void toClipBoard(String text) {
+        Clipboard clipboard = Clipboard.getSystemClipboard();
+        ClipboardContent content = new ClipboardContent();
+        content.putString(text);
+        clipboard.setContent(content);
+    }
+
+    public static TableColumn<List<String>,String> tableColumn(String name,int index) {
+        TableColumn<List<String>, String> tableColumn = new TableColumn<>(name);
+        tableColumn.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(index)));
+        return tableColumn;
     }
 }

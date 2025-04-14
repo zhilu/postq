@@ -10,38 +10,18 @@ import com.postq.util.FXs;
 import com.postq.util.SQLs;
 import com.postq.util.Strings;
 import javafx.application.Platform;
-import javafx.beans.property.SimpleStringProperty;
 import javafx.fxml.FXML;
 import javafx.geometry.Bounds;
 import javafx.geometry.Orientation;
-import javafx.scene.control.Button;
-import javafx.scene.control.ButtonBar;
-import javafx.scene.control.ButtonType;
-import javafx.scene.control.ContextMenu;
-import javafx.scene.control.Dialog;
-import javafx.scene.control.Label;
-import javafx.scene.control.ListView;
-import javafx.scene.control.MenuItem;
-import javafx.scene.control.PasswordField;
-import javafx.scene.control.SelectionMode;
-import javafx.scene.control.SplitPane;
-import javafx.scene.control.Tab;
-import javafx.scene.control.TabPane;
-import javafx.scene.control.TableColumn;
-import javafx.scene.control.TableView;
-import javafx.scene.control.TextField;
-import javafx.scene.control.TreeItem;
-import javafx.scene.control.TreeView;
-import javafx.scene.input.ContextMenuEvent;
-import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyEvent;
-import javafx.scene.input.MouseEvent;
+import javafx.scene.control.*;
+import javafx.scene.input.*;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.stage.Popup;
 import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
 
@@ -93,17 +73,18 @@ public class MainController {
 
 
     // 组将初始化
-    private void initCodeArea(CodeArea defaultCodeArea) {
-        defaultCodeArea.textProperty()
+    private void initCodeArea(CodeArea codeArea) {
+        codeArea.textProperty()
                 .addListener((obs, oldText, newText) ->
-                        defaultCodeArea.setStyleSpans(0, computeHighlighting(newText)));
-        defaultCodeArea.setOnKeyReleased(event -> Platform.runLater(() -> handleKeyReleased(event, defaultCodeArea)));
-        defaultCodeArea.focusedProperty().addListener((obs, oldVal, newVal) -> {
+                        codeArea.setStyleSpans(0, computeHighlighting(newText)));
+        codeArea.setOnKeyReleased(event -> Platform.runLater(() -> handleKeyReleased(event, codeArea)));
+        codeArea.focusedProperty().addListener((obs, oldVal, newVal) -> {
             if (!newVal) {
                 autoCompletePopup.hide();
             }
         });
-        defaultCodeArea.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> autoCompletePopup.hide());
+        codeArea.setParagraphGraphicFactory(LineNumberFactory.get(codeArea));
+        codeArea.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> autoCompletePopup.hide());
     }
 
     private void initTreeView(TreeView<Item> dbTreeView) {
@@ -289,9 +270,12 @@ public class MainController {
 
     public void queryAndDisplay(Database database,String sql){
         long start = System.currentTimeMillis();
-        TableView<List<String>> resultTable = DatabaseManager.INSTANCE.query(database, sql);
-        resultTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
-        int count = resultTable.getItems().size();
+        TableView<List<String>> tableView = DatabaseManager.INSTANCE.query(database, sql);
+
+        initTableView(tableView);
+
+
+        int count = tableView.getItems().size();
         long end = System.currentTimeMillis();
 
         long duration = end - start;
@@ -303,19 +287,19 @@ public class MainController {
 
         MenuItem copyAsSQLItem = new MenuItem("复制为 SQL 插入语句");
         copyAsSQLItem.setOnAction(e -> {
-            SQLs.copySelectedRowsAsSQL(resultTable, "table_name_holder"); // 替换为你的表名
+            SQLs.copySelectedRowsAsSQL(tableView, "table_name_holder"); // 替换为你的表名
         });
 
         contextMenu.getItems().add(copyAsSQLItem);
 
-        resultTable.setContextMenu(contextMenu);
+        tableView.setContextMenu(contextMenu);
 
         HBox statusBar = new HBox(statusLabel);
         statusBar.setMinHeight(24);
         statusBar.setMaxHeight(24);
         statusBar.setStyle("-fx-background-color: #f0f0f0; -fx-padding: 4 8;");
 
-        VBox resultBox = new VBox(resultTable, statusBar);
+        VBox resultBox = new VBox(tableView, statusBar);
         resultBox.setSpacing(5);
         VBox.setVgrow(statusBar, Priority.NEVER);
 
@@ -328,59 +312,90 @@ public class MainController {
         resultTabPane.getSelectionModel().select(resultTab);
     }
 
+    private void initTableView(TableView<List<String>> tableView) {
+        tableView.getSelectionModel().setCellSelectionEnabled(true);
+        tableView.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        TableColumn<List<String>, String> indexColumn = new TableColumn<>("序号");
 
+        indexColumn.setCellFactory(col -> new TableCell<>() {
+            {
+                setOnMousePressed(event -> {
+                    TableView.TableViewSelectionModel<List<String>> selectionModel = getTableView().getSelectionModel();
+                    selectionModel.setCellSelectionEnabled(false); // 临时启用整行模式
+                    selectionModel.setSelectionMode(SelectionMode.MULTIPLE);
+                    int index = getIndex();
+                    if (index >= 0 && index < getTableView().getItems().size()) {
+                        if (event.isShortcutDown()) {
+                            selectionModel.select(index);
+                        } else if (event.isShiftDown()) {
+                            selectionModel.selectRange(selectionModel.getSelectedIndex(), index + 1);
+                        } else {
+                            selectionModel.clearSelection();
+                            selectionModel.select(index);
+                        }
+                    }
+                });
+
+                setOnMouseReleased(event -> {
+                    getTableView().getSelectionModel().setCellSelectionEnabled(true);
+                });
+
+                setOnMouseClicked(event -> {
+                    if (!isEmpty()) {
+                        String item = getItem();
+                        System.out.println("Selected Item on Click: " + item);
+                        FXs.toClipBoard(item);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || getTableRow() == null) {
+                    setText(null);
+                    setStyle("");
+                } else {
+                    int rowIndex = getTableRow().getIndex();
+                    setText(String.valueOf(rowIndex + 1));
+                    setStyle("-fx-text-fill: gray; -fx-background-color: #f0f0f0; -fx-alignment: center;");
+                }
+            }
+        });
+
+        indexColumn.setSortable(false);
+        indexColumn.setEditable(false);
+
+        tableView.getColumns().add(0, indexColumn);
+    }
 
 
     private void showTableStructure(TreeItem<Item> tableItem) {
         Table table = (Table) tableItem.getValue();
         Database database = (Database) tableItem.getParent().getValue();
-        Connection conn = DatabaseManager.INSTANCE.getConnection(database.getTitle());
 
-        if (conn == null) {
-            FXs.showAlert("连接错误", "无法获取数据库连接：" + database.getTitle());
-            return;
-        }
 
-        // ========== 字段结构 TableView ==========
         TableView<List<String>> columnTable = new TableView<>();
-        TableColumn<List<String>, String> colName = new TableColumn<>("字段名");
-        colName.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(0)));
-
-        TableColumn<List<String>, String> colType = new TableColumn<>("类型");
-        colType.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(1)));
-
-        TableColumn<List<String>, String> colNotNull = new TableColumn<>("非空");
-        colNotNull.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(2)));
-
-        TableColumn<List<String>, String> colDefault = new TableColumn<>("默认值");
-        colDefault.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(3)));
-
-        TableColumn<List<String>, String> colComment = new TableColumn<>("注释");
-        colComment.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(4)));
-
-        columnTable.getColumns().addAll(colName, colType, colNotNull, colDefault, colComment);
-
+        String[] titles = {"字段名", "类型", "非空", "默认值", "注释"};
+        for (int i = 0; i < titles.length; i++) {
+            columnTable.getColumns().add(FXs.tableColumn(titles[i], i));
+        }
         List<List<String>> tableSchema = DatabaseManager.INSTANCE.getTableSchema(database, table.getTableName());
         columnTable.getItems().addAll(tableSchema);
 
-        // ========== 索引 TableView ==========
         TableView<List<String>> indexTable = new TableView<>();
-        TableColumn<List<String>, String> idxName = new TableColumn<>("索引名");
-        idxName.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(0)));
-
-        TableColumn<List<String>, String> idxDef = new TableColumn<>("定义");
-        idxDef.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().get(1)));
-
-        indexTable.getColumns().addAll(idxName, idxDef);
+        String[] indexTitle = {"索引名", "定义"};
+        for (int i = 0; i < indexTitle.length; i++) {
+            indexTable.getColumns().add(FXs.tableColumn(indexTitle[i], i));
+        }
 
         List<List<String>> indexData = DatabaseManager.INSTANCE.getIndex(database, table.getTableName());
         indexTable.getItems().addAll(indexData);
 
-        // ========== 使用上下结构的 SplitPane ==========
         SplitPane splitPane = new SplitPane();
         splitPane.setOrientation(Orientation.VERTICAL);
         splitPane.getItems().addAll(columnTable, indexTable);
-        splitPane.setDividerPositions(0.7); // 上70%，下30%
+        splitPane.setDividerPositions(0.7);
 
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle("表结构 - " + table.getTableName());
@@ -388,10 +403,8 @@ public class MainController {
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
         dialog.setResizable(true);
 
-        // 设置Dialog的最小宽度和最小高度来控制显示大小
-        dialog.getDialogPane().setMinWidth(960);  // 设置最小宽度
+        dialog.getDialogPane().setMinWidth(960);
         dialog.getDialogPane().setMinHeight(600);
-        // 使用 showAndWait() 确保对话框阻塞线程并正常响应关闭
         dialog.showAndWait();
     }
 
@@ -432,7 +445,8 @@ public class MainController {
     private static final String[] KEYWORDS = new String[]{
             "SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE",
             "CREATE", "TABLE", "DROP", "ALTER", "INTO", "VALUES",
-            "JOIN", "ON", "AS", "AND", "OR", "NOT", "NULL", "IS","LIMIT"
+            "JOIN", "ON", "AS", "AND", "OR", "NOT", "NULL", "IS","LIMIT",
+            "ORDER","BY"
     };
 
     private static final Pattern PATTERN = Pattern.compile(
